@@ -1,0 +1,23 @@
+{
+  "description": "DiscoveryBench 'nls_raw' task. Panel data derived from the U.S. National Longitudinal Survey of Youth (NLSY). One row per respondent-year with demographic, education, and labor-market variables. Illustrative dbench-format metadata for the autodiscovery_rl example.",
+  "datasets": [
+    {
+      "name": "nls_raw.csv",
+      "description": "Respondent-year panel of survey responses on schooling, work, and family outcomes.",
+      "columns": {
+        "raw": [
+          {"name": "id", "description": "Anonymized respondent identifier."},
+          {"name": "year", "description": "Survey year of the observation."},
+          {"name": "age", "description": "Respondent age in years at the survey year."},
+          {"name": "sex", "description": "Respondent sex (categorical: female, male)."},
+          {"name": "race", "description": "Self-reported race/ethnicity category."},
+          {"name": "years_of_schooling", "description": "Highest years of completed schooling."},
+          {"name": "employed", "description": "Employment status in the survey year (binary: 0, 1)."},
+          {"name": "annual_income", "description": "Reported annual income in nominal US dollars."},
+          {"name": "urban_residence", "description": "Whether the respondent lived in an urban area (binary: 0, 1)."},
+          {"name": "num_children", "description": "Number of children in the household."}
+        ]
+      }
+    }
+  ]
+}

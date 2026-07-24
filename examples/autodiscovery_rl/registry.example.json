@@ -1,0 +1,8 @@
+{
+  "tcga-breast-cancer": "${WEKA_ROOT}/tcga-breast-cancer/metadata.json",
+  "tcga-melanoma": "${WEKA_ROOT}/tcga-melanoma/metadata.json",
+  "nls_raw": {
+    "dataset_metadata": "${WEKA_ROOT}/nls_raw/metadata.json",
+    "dataset_metadata_type": "dbench"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "TCGA-SKCM skin cutaneous melanoma cohort. One row per tumor sample with clinical, demographic, and selected molecular features. Illustrative asta-format metadata for the autodiscovery_rl example; the real CSV lives on the reward server side only.",
+  "datasets": [
+    {
+      "name": "tcga_melanoma.csv",
+      "description": "One row per melanoma tumor sample with de-identified clinical and molecular annotations.",
+      "columns": {
+        "raw": [
+          {"name": "sample_id", "description": "De-identified unique identifier for the tumor sample."},
+          {"name": "age_at_diagnosis", "description": "Patient age in years at initial pathologic diagnosis."},
+          {"name": "sex", "description": "Reported sex of the patient (categorical: female, male)."},
+          {"name": "breslow_depth_mm", "description": "Breslow tumor thickness in millimeters."},
+          {"name": "clark_level", "description": "Clark level of invasion (categorical: I-V)."},
+          {"name": "ulceration", "description": "Presence of tumor ulceration (categorical: present, absent)."},
+          {"name": "primary_site", "description": "Anatomic site of the primary tumor (categorical)."},
+          {"name": "braf_mutation", "description": "BRAF mutation status (categorical: V600E, V600K, wildtype, other)."},
+          {"name": "nras_mutation", "description": "NRAS mutation status (categorical: mutant, wildtype)."},
+          {"name": "tmb", "description": "Tumor mutational burden in mutations per megabase."},
+          {"name": "overall_survival_months", "description": "Overall survival time in months from diagnosis."},
+          {"name": "vital_status", "description": "Vital status at last follow-up (categorical: alive, dead)."}
+        ]
+      }
+    }
+  ]
+}

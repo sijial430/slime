@@ -1,0 +1,20 @@
+{
+  "_comment": "Config consumed by prepare_dataset.py. One entry per scientific dataset. 'dataset_id' MUST match a key in registry.json (the reward server routes on it). 'metadata_path' is read AT PREP TIME (locally) only to embed the dataset's schema/description into the prompt text; it is independent of the weka path the reward server uses at train time. 'dataset_metadata_type' is 'asta' or 'dbench' (controls how the description is rendered). Point metadata_path at a locally-readable copy of each metadata.json (e.g. the example_metadata/ folder here, a GCP-synced copy, or the mounted weka path).",
+  "datasets": [
+    {
+      "dataset_id": "tcga-breast-cancer",
+      "metadata_path": "example_metadata/tcga-breast-cancer/metadata.json",
+      "dataset_metadata_type": "asta"
+    },
+    {
+      "dataset_id": "tcga-melanoma",
+      "metadata_path": "example_metadata/tcga-melanoma/metadata.json",
+      "dataset_metadata_type": "asta"
+    },
+    {
+      "dataset_id": "nls_raw",
+      "metadata_path": "example_metadata/nls_raw/metadata.json",
+      "dataset_metadata_type": "dbench"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "TCGA-BRCA breast invasive carcinoma cohort. One row per tumor sample with clinical, demographic, and selected molecular features. Illustrative asta-format metadata for the autodiscovery_rl example; the real CSV lives on the reward server side only.",
+  "datasets": [
+    {
+      "name": "tcga_breast_cancer.csv",
+      "description": "One row per breast-cancer tumor sample with de-identified clinical and molecular annotations.",
+      "columns": {
+        "raw": [
+          {"name": "sample_id", "description": "De-identified unique identifier for the tumor sample."},
+          {"name": "age_at_diagnosis", "description": "Patient age in years at initial pathologic diagnosis."},
+          {"name": "sex", "description": "Reported sex of the patient (categorical: female, male)."},
+          {"name": "ajcc_stage", "description": "AJCC pathologic tumor stage (categorical: Stage I, Stage II, Stage III, Stage IV)."},
+          {"name": "tumor_size_mm", "description": "Largest tumor dimension in millimeters."},
+          {"name": "er_status", "description": "Estrogen receptor status by IHC (categorical: positive, negative, indeterminate)."},
+          {"name": "pr_status", "description": "Progesterone receptor status by IHC (categorical: positive, negative, indeterminate)."},
+          {"name": "her2_status", "description": "HER2/neu receptor status (categorical: positive, negative, equivocal)."},
+          {"name": "pam50_subtype", "description": "PAM50 intrinsic molecular subtype (categorical: LumA, LumB, Her2, Basal, Normal)."},
+          {"name": "tmb", "description": "Tumor mutational burden in mutations per megabase."},
+          {"name": "overall_survival_months", "description": "Overall survival time in months from diagnosis."},
+          {"name": "vital_status", "description": "Vital status at last follow-up (categorical: alive, dead)."}
+        ]
+      }
+    }
+  ]
+}
