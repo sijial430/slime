@@ -89,8 +89,11 @@ curl -s http://127.0.0.1:8000/health | head -c 200; echo
 #        version-matched to the image's bundled sglang (arg-name skew), so we do
 #        NOT pip install -e the fork. The fork's example scripts + data (this
 #        checkout) are still used; only the slime PACKAGE comes from the image. ---
-IMG_SLIME="$(python3 -c 'import slime, os; print(os.path.dirname(os.path.dirname(slime.__file__)))')"
-cp slime/rollout/rm_hub/autodiscovery.py "$IMG_SLIME/slime/rollout/rm_hub/autodiscovery.py"
+# Resolve from /root so the fork checkout (CWD) does not shadow the image's slime.
+IMG_SLIME="$(cd /root && python3 -c 'import slime, os; print(os.path.dirname(os.path.dirname(slime.__file__)))')"
+if [ "$IMG_SLIME" != "$REPO_ROOT" ]; then
+    cp slime/rollout/rm_hub/autodiscovery.py "$IMG_SLIME/slime/rollout/rm_hub/autodiscovery.py"
+fi
 export SLIME_ROOT="$IMG_SLIME"
 echo "using image slime at $IMG_SLIME (autodiscovery RM injected)"
 

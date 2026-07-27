@@ -173,6 +173,9 @@ if [ "${USE_WANDB:-0}" = "1" ]; then
 fi
 
 # --- Launch: ray head + train.py ---------------------------------------------
+# cd into SLIME_ROOT so `import slime` (and ray's working_dir upload) resolves to
+# the image's version-matched slime, not a fork checkout on the CWD path.
+cd "${SLIME_ROOT}"
 ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-usage-stats
 
 ray job submit --address="http://127.0.0.1:8265" \
