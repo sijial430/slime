@@ -91,7 +91,12 @@ if [ "${INCLUDE_EXEC_LOG:-0}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_lo
     --n_belief_samples "${N_BELIEF_SAMPLES:-5}" "$EXEC_LOG_FLAG" \
     --no-run_data_loading ) > "$REWARD_LOG" 2>&1 &
 RM_PID=$!
-trap 'kill $RM_PID 2>/dev/null || true; echo "===== BEGIN reward_server.log ($REWARD_LOG) ====="; cat "$REWARD_LOG" 2>/dev/null || true; echo "===== END reward_server.log ====="' EXIT
+# Stream the reward server log to stdout (beaker logs) live so gpt rate-limit
+# errors ([reward-error]) and per-hypothesis belief spread ([belief]) are visible
+# during the run, not only in the persisted file at exit.
+tail -n +1 -F "$REWARD_LOG" 2>/dev/null &
+TAIL_PID=$!
+trap 'kill $RM_PID $TAIL_PID 2>/dev/null || true; echo "===== BEGIN reward_server.log ($REWARD_LOG) ====="; cat "$REWARD_LOG" 2>/dev/null || true; echo "===== END reward_server.log ====="' EXIT
 echo "waiting for real reward server (first request builds agents; datasets load lazily)..."
 for _ in $(seq 1 180); do curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 && break; sleep 2; done
 curl -s http://127.0.0.1:8000/health | head -c 200; echo
