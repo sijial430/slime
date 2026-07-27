@@ -86,7 +86,7 @@ REWARD_LOG="$REWARD_LOG_DIR/reward_server.log"
 if [ "${INCLUDE_EXEC_LOG:-0}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_log; else EXEC_LOG_FLAG=--no-include_execution_log; fi
 ( cd "$ASTA_DIR" && uv run --package asta-autodiscovery python -m autodiscovery.slime_reward \
     --dataset_registry "$DATASET_ROOT/registry.json" --host 127.0.0.1 --port 8000 \
-    --concurrency "${REWARD_CONCURRENCY:-4}" \
+    --concurrency "${REWARD_CONCURRENCY:-16}" \
     --execution_model "${EXECUTION_MODEL:-gpt-5-mini}" --belief_model "${BELIEF_MODEL:-gpt-5-mini}" \
     --n_belief_samples "${N_BELIEF_SAMPLES:-5}" "$EXEC_LOG_FLAG" \
     --no-run_data_loading ) > "$REWARD_LOG" 2>&1 &
@@ -147,9 +147,11 @@ source "$IMG_SLIME/scripts/models/${TRAIN_MODEL}.sh"
 # NOTE: cold-start prompt data is jsonl; the reward is minutes/hypothesis, so keep
 # rollout-batch-size small.
 NUM_ROLLOUT="${NUM_ROLLOUT:-5}" \
-    ROLLOUT_BATCH_SIZE="${ROLLOUT_BATCH_SIZE:-1}" \
+    ROLLOUT_BATCH_SIZE="${ROLLOUT_BATCH_SIZE:-32}" \
     N_SAMPLES_PER_PROMPT="${N_SAMPLES_PER_PROMPT:-8}" \
-    MAX_RESPONSE_LEN="${MAX_RESPONSE_LEN:-512}" \
+    MAX_RESPONSE_LEN="${MAX_RESPONSE_LEN:-16384}" \
+    MAX_PROMPT_LEN="${MAX_PROMPT_LEN:-2048}" \
+    MAX_TOKENS_PER_GPU="${MAX_TOKENS_PER_GPU:-18432}" \
     MODEL="$TRAIN_MODEL" \
     NUM_GPUS="${NUM_GPUS:-8}" TENSOR_PARALLEL="${TENSOR_PARALLEL:-4}" \
     ROLLOUT_NUM_GPUS_PER_ENGINE="${ROLLOUT_NUM_GPUS_PER_ENGINE:-4}" \

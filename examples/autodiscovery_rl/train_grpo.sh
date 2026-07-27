@@ -100,6 +100,7 @@ ROLLOUT_ARGS=(
     --num-steps-per-rollout 1
     --global-batch-size "${GLOBAL_BATCH_SIZE}"
 
+    --rollout-max-prompt-len "${MAX_PROMPT_LEN:-2048}"
     --rollout-max-response-len "${MAX_RESPONSE_LEN}"
     --rollout-temperature 1
 )
@@ -122,7 +123,7 @@ fi
 GRPO_ARGS=(
     --advantage-estimator grpo
     --use-kl-loss
-    --kl-loss-coef 0.00
+    --kl-loss-coef "${KL_COEF:-0.001}"
     --kl-loss-type low_var_kl
     --entropy-coef 0.00
     --eps-clip 0.2
@@ -134,12 +135,14 @@ GRPO_ARGS=(
 )
 
 OPTIMIZER_ARGS=(
+    # Megatron's `adam` optimizer is AdamW (decoupled weight decay, Apex
+    # FusedAdam adam_w_mode). With weight-decay 0.0 it's plain Adam == AdamW.
     --optimizer adam
-    --lr "${LR:-1e-6}"
+    --lr "${LR:-5e-7}"
     --lr-decay-style constant
-    --weight-decay 0.1
+    --weight-decay "${WEIGHT_DECAY:-0.0}"
     --adam-beta1 0.9
-    --adam-beta2 0.98
+    --adam-beta2 0.95
 )
 
 PERF_ARGS=(
@@ -154,7 +157,9 @@ PERF_ARGS=(
 
 SGLANG_ARGS=(
     --rollout-num-gpus-per-engine "${ROLLOUT_NUM_GPUS_PER_ENGINE:-1}"
-    --sglang-mem-fraction-static "${SGLANG_MEM_FRACTION_STATIC:-0.4}"
+    # Lowered from 0.4: co-located 9B training needs the GPU room back. sglang
+    # gets 25% for its KV cache; the rest is freed for weights/optimizer/acts.
+    --sglang-mem-fraction-static "${SGLANG_MEM_FRACTION_STATIC:-0.25}"
     # slime runs the co-located engine with memory-saver on (to offload sglang
     # during the training step). This image's sglang defaults the prefill
     # CUDA-graph backend to `breakable`, which refuses to coexist with memory
@@ -170,6 +175,17 @@ MISC_ARGS=(
     --attention-softmax-in-fp32
     --attention-backend flash
 )
+# Activation recomputation: co-located 9B (weights + AdamW fp32 optimizer states
+# + activations) OOMs on TP=4 alongside sglang, even at batch 1 / resp 512.
+# Recompute activations to trade compute for memory -- essential for the 16k-token
+# responses in the real config. Set RECOMPUTE=0 for models that already fit.
+if [ "${RECOMPUTE:-1}" = "1" ]; then
+    MISC_ARGS+=(
+        --recompute-granularity full
+        --recompute-method uniform
+        --recompute-num-layers 1
+    )
+fi
 
 WANDB_ARGS=()
 if [ "${USE_WANDB:-0}" = "1" ]; then
@@ -189,7 +205,7 @@ cd "${SLIME_ROOT}"
 ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-usage-stats
 
 ray job submit --address="http://127.0.0.1:8265" \
-    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\"}}" \
+    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\", \"PYTORCH_CUDA_ALLOC_CONF\": \"expandable_segments:True\"}}" \
     -- python3 "${SLIME_ROOT}/train.py" \
     --actor-num-nodes 1 \
     --actor-num-gpus-per-node "${NUM_GPUS}" \
