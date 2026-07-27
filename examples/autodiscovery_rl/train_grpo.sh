@@ -41,7 +41,10 @@ sleep 2
 export PYTHONUNBUFFERED=1
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-SLIME_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# SLIME_ROOT is the slime repo used for train.py + model args. Override it (e.g.
+# to the docker image's /root/slime) when the fork's slime is not version-matched
+# to the image's bundled sglang.
+SLIME_ROOT="${SLIME_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 
 # --- Model architecture (sourced from slime/scripts/models/<MODEL>.sh) --------
 MODEL="${MODEL:-qwen2.5-0.5B}"
@@ -51,6 +54,10 @@ HF_CHECKPOINT="${HF_CHECKPOINT:-/root/Qwen2.5-0.5B-Instruct/}"
 REF_LOAD="${REF_LOAD:-/root/Qwen2.5-0.5B-Instruct_torch_dist/}"
 SAVE="${SAVE:-/tmp/autodiscovery_grpo_save/}"
 DATA_DIR="${DATA_DIR:-${SCRIPT_DIR}/data}"
+# PROMPT_DATA/EVAL_DATA override the default DATA_DIR/{train,eval}.parquet (e.g.
+# cold-start jsonl). slime reads both .parquet and .jsonl.
+PROMPT_DATA="${PROMPT_DATA:-${DATA_DIR}/train.parquet}"
+EVAL_DATA="${EVAL_DATA:-${DATA_DIR}/eval.parquet}"
 RM_URL="${RM_URL:-http://127.0.0.1:8000/reward}"
 NUM_GPUS="${NUM_GPUS:-1}"
 MEGATRON_PATH="${MEGATRON_PATH:-/root/Megatron-LM}"
@@ -81,7 +88,7 @@ CKPT_ARGS=(
 # (dataset_id for reward routing). No --label-key (reward is remote) and no
 # --rm-type (the custom RM path is used instead).
 ROLLOUT_ARGS=(
-    --prompt-data "${DATA_DIR}/train.parquet"
+    --prompt-data "${PROMPT_DATA}"
     --input-key messages
     --metadata-key metadata
     --apply-chat-template
@@ -106,7 +113,7 @@ CUSTOM_RM_ARGS=(
 EVAL_ARGS=()
 if [ "${DO_EVAL:-1}" = "1" ] && [ "${SMOKE:-0}" != "1" ]; then
     EVAL_ARGS=(
-        --eval-prompt-data autodiscovery "${DATA_DIR}/eval.parquet"
+        --eval-prompt-data autodiscovery "${EVAL_DATA}"
         --eval-interval "${EVAL_INTERVAL:-20}"
         --n-samples-per-eval-prompt "${N_SAMPLES_PER_EVAL_PROMPT:-1}"
     )
@@ -170,7 +177,7 @@ ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-
 
 ray job submit --address="http://127.0.0.1:8265" \
     --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\"}}" \
-    -- python3 train.py \
+    -- python3 "${SLIME_ROOT}/train.py" \
     --actor-num-nodes 1 \
     --actor-num-gpus-per-node "${NUM_GPUS}" \
     --colocate \

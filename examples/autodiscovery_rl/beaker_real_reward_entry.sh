@@ -84,13 +84,21 @@ echo "waiting for real reward server (first request builds agents; datasets load
 for _ in $(seq 1 180); do curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 && break; sleep 2; done
 curl -s http://127.0.0.1:8000/health | head -c 200; echo
 
-# --- 4. slime: use this fork, get the model ---
-pip install -e . --no-deps
+# --- 4. use the IMAGE's version-matched slime (train.py + tools), and only
+#        inject the autodiscovery RM into it. The fork's slime is not
+#        version-matched to the image's bundled sglang (arg-name skew), so we do
+#        NOT pip install -e the fork. The fork's example scripts + data (this
+#        checkout) are still used; only the slime PACKAGE comes from the image. ---
+IMG_SLIME="$(python3 -c 'import slime, os; print(os.path.dirname(os.path.dirname(slime.__file__)))')"
+cp slime/rollout/rm_hub/autodiscovery.py "$IMG_SLIME/slime/rollout/rm_hub/autodiscovery.py"
+export SLIME_ROOT="$IMG_SLIME"
+echo "using image slime at $IMG_SLIME (autodiscovery RM injected)"
+
 MODEL_DIR=/root/Qwen2.5-0.5B-Instruct
 TD_DIR=/root/Qwen2.5-0.5B-Instruct_torch_dist
 [ -f "$MODEL_DIR/config.json" ] || hf download Qwen/Qwen2.5-0.5B-Instruct --local-dir "$MODEL_DIR"
-source scripts/models/qwen2.5-0.5B.sh
-[ -d "$TD_DIR" ] || PYTHONPATH="$MEGATRON_PATH" python tools/convert_hf_to_torch_dist.py \
+source "$IMG_SLIME/scripts/models/qwen2.5-0.5B.sh"
+[ -d "$TD_DIR" ] || PYTHONPATH="$MEGATRON_PATH" python "$IMG_SLIME/tools/convert_hf_to_torch_dist.py" \
     "${MODEL_ARGS[@]}" --hf-checkpoint "$MODEL_DIR" --save "$TD_DIR"
 
 # --- 5. GRPO on cold-start prompts, real reward, wandb ---
