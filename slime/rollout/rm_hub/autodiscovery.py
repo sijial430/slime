@@ -130,4 +130,16 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     if reward is None:
         logger.warning(f"autodiscovery_rm: server returned no reward: {result}")
         return FAILURE_REWARD
+
+    # Surface the server's experiment trace + surprise diagnostics on the sample
+    # so a training run can log them per rollout or fold the execution log into
+    # training. Stored under metadata; harmless if the server omits them.
+    if not isinstance(sample.metadata, dict):
+        sample.metadata = {}
+    if result.get("execution_log") is not None:
+        sample.metadata["execution_log"] = result["execution_log"]
+    sample.metadata["autodiscovery_reward"] = {
+        k: result.get(k)
+        for k in ("reward", "success", "surprising", "belief_change", "kl_divergence", "error")
+    }
     return float(reward)

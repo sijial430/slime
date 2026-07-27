@@ -73,13 +73,25 @@ print("wrote", f"{root}/registry.json")
 PY
 
 # --- 3. start the REAL reward server (separate uv/py3.13 env), localhost:8000 ---
+# Persist the reward server's execution logs (experiment runs + belief elicitation
+# per hypothesis): write into the Beaker result dir so they're saved as a
+# downloadable result-dataset artifact, and dump the file to stdout on exit so
+# it always lands in `beaker experiment logs` too (even on timeout/crash).
+REWARD_LOG_DIR="${BEAKER_RESULT_DIR:-/results}"
+mkdir -p "$REWARD_LOG_DIR" 2>/dev/null || REWARD_LOG_DIR=/root
+REWARD_LOG="$REWARD_LOG_DIR/reward_server.log"
+# Execution logs are still PERSISTED server-side (the $REWARD_LOG above), we just
+# don't return them per-request to fold into training for now -> default off.
+# Flip INCLUDE_EXEC_LOG=1 to have the server attach execution_log to each reward.
+if [ "${INCLUDE_EXEC_LOG:-0}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_log; else EXEC_LOG_FLAG=--no-include_execution_log; fi
 ( cd "$ASTA_DIR" && uv run --package asta-autodiscovery python -m autodiscovery.slime_reward \
     --dataset_registry "$DATASET_ROOT/registry.json" --host 127.0.0.1 --port 8000 \
     --concurrency "${REWARD_CONCURRENCY:-4}" \
-    --execution_model gpt-4o --belief_model gpt-4o-mini --n_belief_samples 3 \
-    --no-run_data_loading ) > /root/reward_server.log 2>&1 &
+    --execution_model "${EXECUTION_MODEL:-gpt-5-mini}" --belief_model "${BELIEF_MODEL:-gpt-5-mini}" \
+    --n_belief_samples "${N_BELIEF_SAMPLES:-5}" "$EXEC_LOG_FLAG" \
+    --no-run_data_loading ) > "$REWARD_LOG" 2>&1 &
 RM_PID=$!
-trap 'kill $RM_PID 2>/dev/null || true' EXIT
+trap 'kill $RM_PID 2>/dev/null || true; echo "===== BEGIN reward_server.log ($REWARD_LOG) ====="; cat "$REWARD_LOG" 2>/dev/null || true; echo "===== END reward_server.log ====="' EXIT
 echo "waiting for real reward server (first request builds agents; datasets load lazily)..."
 for _ in $(seq 1 180); do curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 && break; sleep 2; done
 curl -s http://127.0.0.1:8000/health | head -c 200; echo
@@ -110,11 +122,25 @@ fi
 export SLIME_ROOT="$IMG_SLIME"
 echo "using image slime at $IMG_SLIME (autodiscovery RM injected)"
 
-MODEL_DIR=/root/Qwen2.5-0.5B-Instruct
-TD_DIR=/root/Qwen2.5-0.5B-Instruct_torch_dist
-[ -f "$MODEL_DIR/config.json" ] || hf download Qwen/Qwen2.5-0.5B-Instruct --local-dir "$MODEL_DIR"
-source "$IMG_SLIME/scripts/models/qwen2.5-0.5B.sh"
-[ -d "$TD_DIR" ] || PYTHONPATH="$MEGATRON_PATH" python "$IMG_SLIME/tools/convert_hf_to_torch_dist.py" \
+# --- model: Qwen3.5-9B. Qwen3.5 is a slime-supported family (scripts/models/ +
+#     slime_plugins mbridge/models qwen3_5). It's a VLM; the mbridge maps the
+#     `model.language_model.*` text tower into Megatron and we train text-only.
+#     Prefer the image's native qwen3.5 support; if the image predates it, fill
+#     in the arch script + slime_plugins (qwen3_5 mbridge + megatron spec) from
+#     this fork so `--spec slime_plugins.models.qwen3_5` and the bridge resolve.
+TRAIN_MODEL="${TRAIN_MODEL:-qwen3.5-9B}"
+HF_REPO="${HF_REPO:-Qwen/Qwen3.5-9B}"
+MODEL_DIR="/root/$(basename "$HF_REPO")"
+TD_DIR="${MODEL_DIR}_torch_dist"
+if [ "$IMG_SLIME" != "$REPO_ROOT" ]; then
+    [ -f "$IMG_SLIME/scripts/models/${TRAIN_MODEL}.sh" ] || \
+        cp "$REPO_ROOT/scripts/models/${TRAIN_MODEL}.sh" "$IMG_SLIME/scripts/models/${TRAIN_MODEL}.sh"
+    # -n: only add files the image is missing, never clobber the image's own.
+    cp -rn "$REPO_ROOT/slime_plugins/." "$IMG_SLIME/slime_plugins/" 2>/dev/null || true
+fi
+[ -f "$MODEL_DIR/config.json" ] || hf download "$HF_REPO" --local-dir "$MODEL_DIR"
+source "$IMG_SLIME/scripts/models/${TRAIN_MODEL}.sh"
+[ -d "$TD_DIR" ] || PYTHONPATH="$MEGATRON_PATH:$IMG_SLIME" python "$IMG_SLIME/tools/convert_hf_to_torch_dist.py" \
     "${MODEL_ARGS[@]}" --hf-checkpoint "$MODEL_DIR" --save "$TD_DIR"
 
 # --- 5. GRPO on cold-start prompts, real reward, wandb ---
@@ -124,6 +150,9 @@ NUM_ROLLOUT="${NUM_ROLLOUT:-5}" \
     ROLLOUT_BATCH_SIZE="${ROLLOUT_BATCH_SIZE:-1}" \
     N_SAMPLES_PER_PROMPT="${N_SAMPLES_PER_PROMPT:-8}" \
     MAX_RESPONSE_LEN="${MAX_RESPONSE_LEN:-512}" \
+    MODEL="$TRAIN_MODEL" \
+    NUM_GPUS="${NUM_GPUS:-8}" TENSOR_PARALLEL="${TENSOR_PARALLEL:-4}" \
+    ROLLOUT_NUM_GPUS_PER_ENGINE="${ROLLOUT_NUM_GPUS_PER_ENGINE:-4}" \
     DO_EVAL=0 SAVE_INTERVAL=9999 \
     RM_URL=http://127.0.0.1:8000/reward \
     HF_CHECKPOINT="$MODEL_DIR/" REF_LOAD="$TD_DIR/" \
@@ -131,7 +160,7 @@ NUM_ROLLOUT="${NUM_ROLLOUT:-5}" \
     PROMPT_DATA="$SCRIPT_DIR/data_smoke_cold/train.jsonl" \
     MEGATRON_PATH="$MEGATRON_PATH" \
     USE_WANDB=1 WANDB_KEY="${WANDB_KEY:-${SIJIAL_WANDB_API_KEY:-}}" \
-    WANDB_PROJECT=autodiscovery-rl WANDB_GROUP="real-reward-coldstart-${NUM_ROLLOUT}steps" \
+    WANDB_PROJECT=autodiscovery-rl WANDB_GROUP="real-reward-${TRAIN_MODEL}-${NUM_ROLLOUT}steps" \
     bash examples/autodiscovery_rl/train_grpo.sh
 
 echo "=== real-reward co-located smoke finished OK ==="

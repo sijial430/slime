@@ -127,6 +127,10 @@ GRPO_ARGS=(
     --entropy-coef 0.00
     --eps-clip 0.2
     --eps-clip-high 0.28
+    # Drop GRPO groups whose N samples all got the same reward (zero within-group
+    # variance -> zero advantage -> no signal). Common with the coarse surprise
+    # reward on weak/near-duplicate hypotheses; filtering keeps the batch useful.
+    --grpo-filter-groups-with-same-reward
 )
 
 OPTIMIZER_ARGS=(
@@ -139,7 +143,7 @@ OPTIMIZER_ARGS=(
 )
 
 PERF_ARGS=(
-    --tensor-model-parallel-size 1
+    --tensor-model-parallel-size "${TENSOR_PARALLEL:-1}"
     --pipeline-model-parallel-size 1
     --context-parallel-size 1
     --expert-model-parallel-size 1
