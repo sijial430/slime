@@ -151,6 +151,12 @@ PERF_ARGS=(
 SGLANG_ARGS=(
     --rollout-num-gpus-per-engine "${ROLLOUT_NUM_GPUS_PER_ENGINE:-1}"
     --sglang-mem-fraction-static "${SGLANG_MEM_FRACTION_STATIC:-0.4}"
+    # slime runs the co-located engine with memory-saver on (to offload sglang
+    # during the training step). This image's sglang defaults the prefill
+    # CUDA-graph backend to `breakable`, which refuses to coexist with memory
+    # saver ("Breakable CUDA graph is not compatible with memory saver mode").
+    # CUDA graphs buy ~nothing for a 0.5B smoke; disable capture entirely.
+    --sglang-disable-cuda-graph
 )
 
 MISC_ARGS=(
