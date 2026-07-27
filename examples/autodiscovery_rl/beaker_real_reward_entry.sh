@@ -89,8 +89,13 @@ curl -s http://127.0.0.1:8000/health | head -c 200; echo
 #        version-matched to the image's bundled sglang (arg-name skew), so we do
 #        NOT pip install -e the fork. The fork's example scripts + data (this
 #        checkout) are still used; only the slime PACKAGE comes from the image. ---
-# Resolve from /root so the fork checkout (CWD) does not shadow the image's slime.
-IMG_SLIME="$(cd /root && python3 -c 'import slime, os; print(os.path.dirname(os.path.dirname(slime.__file__)))')"
+# The image installs slime at /root/slime (see docker/Dockerfile). Its editable
+# install has slime.__file__ == None, so detect via __path__ with a hard fallback.
+IMG_SLIME="${IMG_SLIME:-/root/slime}"
+if [ ! -f "$IMG_SLIME/train.py" ]; then
+    IMG_SLIME="$(cd /root && python3 -c 'import slime, os; print(os.path.dirname(list(slime.__path__)[0]))')"
+fi
+[ -f "$IMG_SLIME/train.py" ] || { echo "cannot locate image slime (train.py) at '$IMG_SLIME'"; exit 1; }
 if [ "$IMG_SLIME" != "$REPO_ROOT" ]; then
     cp slime/rollout/rm_hub/autodiscovery.py "$IMG_SLIME/slime/rollout/rm_hub/autodiscovery.py"
 fi
