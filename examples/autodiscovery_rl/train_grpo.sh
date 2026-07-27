@@ -205,7 +205,7 @@ cd "${SLIME_ROOT}"
 ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-usage-stats
 
 ray job submit --address="http://127.0.0.1:8265" \
-    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\", \"PYTORCH_CUDA_ALLOC_CONF\": \"expandable_segments:True\"}}" \
+    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\"}}" \
     -- python3 "${SLIME_ROOT}/train.py" \
     --actor-num-nodes 1 \
     --actor-num-gpus-per-node "${NUM_GPUS}" \
