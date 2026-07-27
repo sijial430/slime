@@ -99,6 +99,13 @@ fi
 if [ "$IMG_SLIME" != "$REPO_ROOT" ]; then
     cp slime/rollout/rm_hub/autodiscovery.py "$IMG_SLIME/slime/rollout/rm_hub/autodiscovery.py"
 fi
+# Patch a slime<->sglang arg-name skew in slimerl/slime:latest: validate_args
+# reads args.sglang_data_parallel_size, but this image's sglang exposes it as
+# args.sglang_dp_size, raising AttributeError. Make the alias tolerant.
+SGL_ARGS_PY="$IMG_SLIME/slime/backends/sglang_utils/arguments.py"
+if [ -f "$SGL_ARGS_PY" ]; then
+    sed -i 's/args\.sglang_dp_size = args\.sglang_data_parallel_size/args.sglang_dp_size = getattr(args, "sglang_data_parallel_size", getattr(args, "sglang_dp_size", 1))/' "$SGL_ARGS_PY" || true
+fi
 export SLIME_ROOT="$IMG_SLIME"
 echo "using image slime at $IMG_SLIME (autodiscovery RM injected)"
 
