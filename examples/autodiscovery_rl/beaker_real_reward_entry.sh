@@ -36,13 +36,15 @@ ASTA_DIR="${ASTA_DIR:-/root/asta-autodiscovery}"
 ASTA_REF="${ASTA_REF:-sijia/generator-dev}"
 S3_DATASETS="s3://ai2-asta-workspaces/autods/datasets"
 
-# --- install uv (for the asta 3.13 env) ---
+# --- install uv (for the asta 3.13 env + awscli); the slime image has neither ---
 command -v uv >/dev/null 2>&1 || { curl -LsSf https://astral.sh/uv/install.sh | sh; export PATH="$HOME/.local/bin:$PATH"; }
+export PATH="$HOME/.local/bin:$PATH"
+AWS="uvx --from awscli aws"
 
-# --- 1. clone asta-autodiscovery (private) ---
+# --- 1. clone asta-autodiscovery (beaker's git credential helper provides auth) ---
 if [ ! -d "$ASTA_DIR/.git" ]; then
     git clone --depth 1 --branch "$ASTA_REF" \
-        "https://${GITHUB_TOKEN}@github.com/allenai/asta-autodiscovery.git" "$ASTA_DIR"
+        "https://github.com/allenai/asta-autodiscovery.git" "$ASTA_DIR"
 fi
 
 # --- 2. fetch the 3 datasets + write registry ---
@@ -51,7 +53,7 @@ fetch() {  # <id> <s3-subdir> <file>...
     local id="$1" sub="$2"; shift 2
     mkdir -p "$DATASET_ROOT/$id"
     cp "$SCRIPT_DIR/reward_metadata/$id/metadata.json" "$DATASET_ROOT/$id/metadata.json"
-    for f in "$@"; do aws s3 cp "$S3_DATASETS/$sub/$f" "$DATASET_ROOT/$id/"; done
+    for f in "$@"; do $AWS s3 cp "$S3_DATASETS/$sub/$f" "$DATASET_ROOT/$id/"; done
 }
 # tcga: clinical + mutations only (trimmed metadata skips the multi-hundred-MB gene file)
 fetch tcga-breast-cancer tcga-breast-cancer  cleaned_clinical_data.csv cleaned_mutations.csv
