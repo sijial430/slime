@@ -1,0 +1,256 @@
+{
+  "id": 0,
+  "domain": "cancer genomics",
+  "workflow_tags": "clinical data analysis",
+  "domain_knowledge": "",
+  "datasets": [
+    {
+      "name": "cleaned_clinical_data.csv",
+      "description": "Clinical and demographic metadata for TCGA breast cancer cohort, including diagnosis, treatment, outcomes, and patient characteristics.",
+      "columns": {
+        "raw": [
+          {
+            "name": "bcr_patient_barcode",
+            "description": "TCGA patient barcode (BCR identifier)"
+          },
+          {
+            "name": "gender",
+            "description": "Reported gender"
+          },
+          {
+            "name": "race",
+            "description": "Race (list/label)"
+          },
+          {
+            "name": "ethnicity",
+            "description": "Ethnicity"
+          },
+          {
+            "name": "days_to_birth",
+            "description": "Negative days offset from birth"
+          },
+          {
+            "name": "age_at_diagnosis",
+            "description": "Age at initial pathologic diagnosis (years)"
+          },
+          {
+            "name": "menopause_status",
+            "description": "Menopause status at diagnosis"
+          },
+          {
+            "name": "histological_type",
+            "description": "Histological tumor type"
+          },
+          {
+            "name": "diagnosis_year",
+            "description": "Year of initial pathologic diagnosis"
+          },
+          {
+            "name": "icd_10_code",
+            "description": "ICD-10 disease classification code"
+          },
+          {
+            "name": "tissue_source_site",
+            "description": "Tissue source site code"
+          },
+          {
+            "name": "prior_malignancy",
+            "description": "History of prior malignancy diagnosis"
+          },
+          {
+            "name": "er_status",
+            "description": "Estrogen receptor status (Positive/Negative/Indeterminate)"
+          },
+          {
+            "name": "pr_status",
+            "description": "Progesterone receptor status (Positive/Negative/Indeterminate)"
+          },
+          {
+            "name": "her2_ihc_status",
+            "description": "HER2 immunohistochemistry receptor status"
+          },
+          {
+            "name": "her2_fish_status",
+            "description": "HER2 FISH (fluorescence in situ hybridization) result"
+          },
+          {
+            "name": "her2_ihc_score",
+            "description": "HER2 IHC score (0, 1+, 2+, 3+)"
+          },
+          {
+            "name": "pathologic_stage",
+            "description": "AJCC pathologic stage (post-surgery)"
+          },
+          {
+            "name": "pathologic_t",
+            "description": "AJCC pathologic T (tumor) stage"
+          },
+          {
+            "name": "pathologic_n",
+            "description": "AJCC pathologic N (lymph node) stage"
+          },
+          {
+            "name": "pathologic_m",
+            "description": "AJCC pathologic M (metastasis) stage"
+          },
+          {
+            "name": "lymph_nodes_examined",
+            "description": "Number of lymph nodes examined"
+          },
+          {
+            "name": "lymph_nodes_positive",
+            "description": "Number of lymph nodes positive by H&E"
+          },
+          {
+            "name": "anatomic_subdivision",
+            "description": "Anatomic neoplasm subdivision (breast quadrant/laterality)"
+          },
+          {
+            "name": "tumor_status",
+            "description": "Person neoplasm cancer status (tumor free/with tumor)"
+          },
+          {
+            "name": "surgery_type",
+            "description": "Breast carcinoma surgical procedure name"
+          },
+          {
+            "name": "surgical_margin",
+            "description": "Surgical margin status (Positive/Negative/Close)"
+          },
+          {
+            "name": "neoadjuvant_treatment",
+            "description": "History of neoadjuvant treatment"
+          },
+          {
+            "name": "radiation_therapy",
+            "description": "Radiation therapy administered (YES/NO)"
+          },
+          {
+            "name": "pharmaceutical_therapy",
+            "description": "Postoperative pharmaceutical therapy administered"
+          },
+          {
+            "name": "drug_name",
+            "description": "Primary drug name (first occurrence)"
+          },
+          {
+            "name": "therapy_type",
+            "description": "Primary therapy type (first occurrence)"
+          },
+          {
+            "name": "vital_status",
+            "description": "Patient vital status (Alive/Dead)"
+          },
+          {
+            "name": "days_to_last_followup",
+            "description": "Days from diagnosis to last follow-up"
+          },
+          {
+            "name": "days_to_death",
+            "description": "Days from diagnosis to death"
+          },
+          {
+            "name": "new_tumor_event",
+            "description": "New tumor event after initial treatment (YES/NO)"
+          },
+          {
+            "name": "days_to_new_tumor",
+            "description": "Days to new tumor event after initial treatment"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cleaned_mutations.csv",
+      "description": "dataset_info:\n  name: TCGA-BRCA Somatic Mutations\n  source: GDC Data Portal - MC3 Public MAF\n  format: Mutation Annotation Format (MAF)\n  data_type: Somatic mutations (SNVs and small indels)\n  workflow: MC3 - Multi-Center Mutation Calling in Multiple Cancers\n  description: Curated somatic mutation calls combining multiple variant calling pipelines\ndimensions:\n  total_mutations: 135030\n  unique_patients: 1020\n  unique_genes: 18907\n  columns: 21\nsample_alignment:\n  clinical_patients: 1097\n  patients_with_mutations: 1020\n  note: Mutations filtered to match patients in cleaned_clinical_data.csv\nvariant_summary:\n  top_variant_classifications:\n    Missense_Mutation: 69328\n    Silent: 25786\n    3'UTR: 9585\n    Frame_Shift_Del: 9324\n    Nonsense_Mutation: 5890\n    Intron: 4617\n    5'UTR: 3484\n    Splice_Site: 2084\n    RNA: 1728\n    Frame_Shift_Ins: 961\n    3'Flank: 721\n    In_Frame_Del: 683\n    5'Flank: 606\n    Translation_Start_Site: 93\n    Nonstop_Mutation: 90\n    In_Frame_Ins: 50\n  variant_types:\n    SNP: 122135\n    DEL: 11564\n    INS: 1326\n    ONP: 5\n  description: Most common mutation types in the dataset\ntop_mutated_genes:\n  genes:\n    TTN: 446\n    PIK3CA: 425\n    TP53: 376\n    MUC16: 213\n    CDH1: 144\n    MAP3K1: 142\n    GATA3: 141\n    KMT2C: 132\n    RYR2: 121\n    SYNE1: 118\n    FLG: 107\n    DST: 106\n    HMCN1: 103\n    DMD: 92\n    NEB: 91\n    OBSCN: 91\n    USH2A: 88\n    RYR3: 85\n    SPTA1: 84\n    SYNE2: 80\n  description: Top 20 most frequently mutated genes\ncolumn_descriptions:\n  Hugo_Symbol: HUGO gene symbol\n  Chromosome: Chromosome where mutation occurs\n  Start_Position: Genomic start position (1-based)\n  Variant_Classification: Mutation type (e.g., Missense_Mutation, Nonsense_Mutation)\n  Variant_Type: SNP, DNP, INS, or DEL\n  HGVSp_Short: Protein change annotation\n  Tumor_Sample_Barcode: TCGA sample barcode\n  bcr_patient_barcode: Patient identifier (TCGA-XX-XXXX format)\nusage_notes:\n- Each row represents one somatic mutation\n- Match to clinical data using the bcr_patient_barcode column\n- For gene-level analysis, aggregate mutations by Hugo_Symbol\n- For patient-level mutation burden, count mutations per bcr_patient_barcode\n- Variant_Classification indicates functional impact\n- FILTER column shows variant quality filtering status",
+      "columns": {
+        "raw": [
+          {
+            "name": "Hugo_Symbol",
+            "description": "HUGO gene symbol"
+          },
+          {
+            "name": "Chromosome",
+            "description": "Chromosome where mutation occurs"
+          },
+          {
+            "name": "Start_Position",
+            "description": "Genomic start position (1-based coordinate)"
+          },
+          {
+            "name": "End_Position",
+            "description": "Genomic end position (1-based coordinate)"
+          },
+          {
+            "name": "Strand",
+            "description": "DNA strand on which the mutation is annotated (+ or -)"
+          },
+          {
+            "name": "Variant_Classification",
+            "description": "Functional class of the mutation (e.g., Missense_Mutation, Nonsense_Mutation, RNA, UTR, Frame_Shift)"
+          },
+          {
+            "name": "Variant_Type",
+            "description": "Type of variant call (e.g., SNP, DEL, INS, ONP)"
+          },
+          {
+            "name": "Reference_Allele",
+            "description": "Reference allele observed at the mutation site"
+          },
+          {
+            "name": "Tumor_Seq_Allele1",
+            "description": "First observed tumor allele at the locus"
+          },
+          {
+            "name": "Tumor_Seq_Allele2",
+            "description": "Second observed tumor allele at the locus"
+          },
+          {
+            "name": "Tumor_Sample_Barcode",
+            "description": "TCGA tumor sample barcode"
+          },
+          {
+            "name": "bcr_patient_barcode",
+            "description": "Patient identifier (TCGA-XX-XXXX format)"
+          },
+          {
+            "name": "HGVSc",
+            "description": "HGVS coding DNA change annotation (c.) using transcript coordinates"
+          },
+          {
+            "name": "HGVSp",
+            "description": "HGVS protein change annotation using full protein notation (p.)"
+          },
+          {
+            "name": "HGVSp_Short",
+            "description": "Shortened HGVS protein change notation"
+          },
+          {
+            "name": "Transcript_ID",
+            "description": "Ensembl transcript identifier (ENST...) used for annotation"
+          },
+          {
+            "name": "Exon_Number",
+            "description": "Exon where the variant occurs (e.g., 6/6)"
+          },
+          {
+            "name": "IMPACT",
+            "description": "Predicted functional impact class of the mutation (HIGH, MODERATE, LOW, MODIFIER)"
+          },
+          {
+            "name": "SIFT",
+            "description": "SIFT protein impact prediction in the form label(score), where label is one of tolerated/deleterious/deleterious_low_confidence and score is a probability (0\u20131)"
+          },
+          {
+            "name": "PolyPhen",
+            "description": "PolyPhen-2 protein impact prediction in the form label(score), where label is one of benign/possibly_damaging/probably_damaging and score is a probability (0\u20131)"
+          },
+          {
+            "name": "FILTER",
+            "description": "Variant filter status indicating whether the call passed QC filtering"
+          }
+        ]
+      }
+    }
+  ]
+}

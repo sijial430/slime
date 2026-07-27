@@ -1,0 +1,284 @@
+{
+  "id": 0,
+  "domain": "cancer genomics",
+  "workflow_tags": "clinical data analysis",
+  "domain_knowledge": "",
+  "datasets": [
+    {
+      "name": "cleaned_clinical_data.csv",
+      "description": "Clinical and demographic metadata for TCGA-SKCM cohort, including diagnosis, treatment, outcomes, and patient characteristics.",
+      "columns": {
+        "raw": [
+          {
+            "name": "case_id",
+            "description": "Unique GDC case identifier; identifiers"
+          },
+          {
+            "name": "submitter_id",
+            "description": "TCGA barcode (submitter ID); identifiers"
+          },
+          {
+            "name": "project_id",
+            "description": "Project identifier; identifiers"
+          },
+          {
+            "name": "bcr_patient_uuid",
+            "description": "UUID assigned by BCR; identifiers"
+          },
+          {
+            "name": "bcr_patient_barcode",
+            "description": "Patient barcode (may duplicate submitter_id); identifiers"
+          },
+          {
+            "name": "gender",
+            "description": "Reported gender; demographics"
+          },
+          {
+            "name": "race",
+            "description": "Race (list/label); demographics"
+          },
+          {
+            "name": "ethnicity",
+            "description": "Ethnicity; demographics"
+          },
+          {
+            "name": "days_to_birth",
+            "description": "Negative days offset from birth; demographics"
+          },
+          {
+            "name": "age_at_diagnosis",
+            "description": "Age at initial pathologic diagnosis (years); demographics"
+          },
+          {
+            "name": "height_cm",
+            "description": "Height (cm); demographics"
+          },
+          {
+            "name": "weight_kg",
+            "description": "Weight (kg); demographics"
+          },
+          {
+            "name": "primary_site",
+            "description": "Primary anatomical site label; diagnostic_codes"
+          },
+          {
+            "name": "disease_type",
+            "description": "GDC disease type; diagnostic_codes"
+          },
+          {
+            "name": "icd_o_site_code",
+            "description": "ICD-O-3 topography code; diagnostic_codes"
+          },
+          {
+            "name": "icd_o_histology_code",
+            "description": "ICD-O-3 morphology (histology) code; diagnostic_codes"
+          },
+          {
+            "name": "icd_10_code",
+            "description": "ICD-10 / ICD-10-CM code; diagnostic_codes"
+          },
+          {
+            "name": "baseline_neoplasm_status",
+            "description": "Baseline cancer status; baseline_disease"
+          },
+          {
+            "name": "primary_melanoma_dx",
+            "description": "Primary melanoma diagnostic text; baseline_disease"
+          },
+          {
+            "name": "primary_melanoma_sites",
+            "description": "Reported sites of primary melanomas; baseline_disease"
+          },
+          {
+            "name": "other_diagnoses",
+            "description": "Other reported diagnoses; baseline_disease"
+          },
+          {
+            "name": "ajcc_pathologic_stage_raw",
+            "description": "AJCC stage (raw string); pathology_staging"
+          },
+          {
+            "name": "breslow_thickness",
+            "description": "Breslow thickness (mm); pathology_staging"
+          },
+          {
+            "name": "clark_level",
+            "description": "Clark invasion level; pathology_staging"
+          },
+          {
+            "name": "ulceration_indicator",
+            "description": "Ulceration (YES/NO); pathology_staging"
+          },
+          {
+            "name": "mitotic_count_per_mm2",
+            "description": "Mitotic count per mm^2; pathology_staging"
+          },
+          {
+            "name": "lactate_dehydrogenase_result",
+            "description": "LDH lab result; pathology_staging"
+          },
+          {
+            "name": "submitted_tumor_location",
+            "description": "Submitted tumor location; specimen_locations"
+          },
+          {
+            "name": "distant_metastasis_site",
+            "description": "Distant metastasis site; specimen_locations"
+          },
+          {
+            "name": "skin_origin_site",
+            "description": "Primary skin origin site; specimen_locations"
+          },
+          {
+            "name": "tissue_source_site",
+            "description": "Tissue source site code; specimen_locations"
+          },
+          {
+            "name": "tissue_prospective_collection",
+            "description": "Prospective collection indicator; specimen_locations"
+          },
+          {
+            "name": "tissue_retrospective_collection",
+            "description": "Retrospective collection indicator; specimen_locations"
+          },
+          {
+            "name": "prior_systemic_therapy",
+            "description": "Prior systemic therapy (indicator); treatment_history"
+          },
+          {
+            "name": "prior_radiation_therapy",
+            "description": "Prior radiation therapy (indicator); treatment_history"
+          },
+          {
+            "name": "radiation_to_primary",
+            "description": "Radiation to primary tumor; treatment_history"
+          },
+          {
+            "name": "radiation_therapy",
+            "description": "Radiation therapy indicator (general); treatment_history"
+          },
+          {
+            "name": "history_neoadjuvant",
+            "description": "Neoadjuvant treatment history; treatment_history"
+          },
+          {
+            "name": "interferon_90d_prior_excision",
+            "description": "Interferon within 90 days prior to excision; treatment_history"
+          },
+          {
+            "name": "vital_status",
+            "description": "Patient-level vital status; outcomes_survival_patient"
+          },
+          {
+            "name": "days_to_last_followup",
+            "description": "Days to last follow-up (patient); outcomes_survival_patient"
+          },
+          {
+            "name": "days_to_death",
+            "description": "Days to death (patient); outcomes_followup_form"
+          },
+          {
+            "name": "last_followup_vital_status",
+            "description": "Vital status at last follow-up form; outcomes_followup_form"
+          },
+          {
+            "name": "last_known_disease_status",
+            "description": "Disease status at last follow-up form; outcomes_followup_form"
+          },
+          {
+            "name": "last_followup_days_to_last_followup",
+            "description": "Days to last follow-up (form); outcomes_followup_form"
+          },
+          {
+            "name": "last_followup_days_to_death",
+            "description": "Days to death (form); outcomes_followup_form"
+          },
+          {
+            "name": "new_tumor_events_indicator",
+            "description": "New tumor events (patient record); event_indicators"
+          },
+          {
+            "name": "subsequent_primary_melanoma_during_followup",
+            "description": "Subsequent primary melanoma during follow-up; event_indicators"
+          },
+          {
+            "name": "new_tumor_event_indicator_followup",
+            "description": "New tumor event indicator (follow-up form); event_indicators"
+          },
+          {
+            "name": "new_tumor_event_after_initial_treatment",
+            "description": "New tumor event after initial treatment; counts"
+          },
+          {
+            "name": "diagnoses_count",
+            "description": "Count of diagnosis records; counts"
+          },
+          {
+            "name": "followups_count",
+            "description": "Count of follow-up records; counts"
+          },
+          {
+            "name": "treatments_count",
+            "description": "Count of treatment records; counts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cleaned_mutations.csv",
+      "description": "dataset_info:\n  name: TCGA-SKCM Somatic Mutations\n  source: GDC Data Portal - MC3 Public MAF\n  format: Mutation Annotation Format (MAF)\n  data_type: Somatic mutations (SNVs and small indels)\n  workflow: MC3 - Multi-Center Mutation Calling in Multiple Cancers\n  description: Curated somatic mutation calls combining multiple variant calling pipelines\ndimensions:\n  total_mutations: 572902\n  unique_patients: 466\n  unique_genes: 19609\n  columns: 22\nsample_alignment:\n  clinical_patients: 470\n  patients_with_mutations: 466\n  note: Mutations filtered to match patients in cleaned_clinical_data.csv\nvariant_summary:\n  top_variant_classifications:\n    Missense_Mutation: 311513\n    Silent: 168839\n    Nonsense_Mutation: 24510\n    3'UTR: 21651\n    Intron: 14391\n    5'UTR: 11008\n    RNA: 7212\n    Splice_Site: 6986\n    5'Flank: 2190\n    3'Flank: 1790\n  variant_types:\n    SNP: 570435\n    DEL: 1903\n    INS: 540\n    ONP: 15\n    TNP: 9\n  description: Most common mutation types in the dataset\ntop_mutated_genes:\n  genes:\n    TTN: 3604\n    MUC16: 2362\n    DNAH5: 1021\n    PCLO: 794\n    LRP1B: 601\n    ANK3: 573\n    GPR98: 572\n    CSMD1: 553\n    DNAH7: 532\n    CSMD2: 527\n  description: Top 10 most frequently mutated genes\\n\n  usage_notes:\n- Each row represents one somatic mutation\n- Match to clinical data using the patient_id column\n- For gene-level analysis, aggregate mutations by Hugo_Symbol\n- For patient-level mutation burden, count mutations per patient_id\n- Variant_Classification indicates functional impact\n- FILTER column shows variant quality filtering status",
+      "columns": {
+        "raw": [
+          {
+            "name": "Hugo_Symbol",
+            "description": "HUGO gene symbol"
+          },
+          {
+            "name": "Chromosome",
+            "description": "Chromosome where mutation occurs"
+          },
+          {
+            "name": "Start_Position",
+            "description": "Genomic start position (1-based)"
+          },
+          {
+            "name": "Variant_Classification",
+            "description": "Mutation type (e.g., Missense_Mutation, Nonsense_Mutation)"
+          },
+          {
+            "name": "Variant_Type",
+            "description": "SNP, DNP, INS, or DEL"
+          },
+          {
+            "name": "HGVSp_Short",
+            "description": "Protein change annotation"
+          },
+          {
+            "name": "Tumor_Sample_Barcode",
+            "description": "TCGA sample barcode"
+          },
+          {
+            "name": "patient_id",
+            "description": "Patient identifier (TCGA-XX-XXXX format)"
+          }
+        ]
+      }
+    }
+  ],
+  "intermediate": [],
+  "hypotheses": {
+    "main": [
+      {}
+    ],
+    "intermediate": []
+  },
+  "queries": [
+    [
+      {
+        "qid": 0,
+        "question_type": "relationship",
+        "question": "What clinical and pathological features predict overall survival in TCGA-SKCM patients?"
+      }
+    ]
+  ]
+}

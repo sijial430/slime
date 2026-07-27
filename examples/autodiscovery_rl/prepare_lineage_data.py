@@ -72,7 +72,7 @@ def build_registry(rows: list[dict], weka_root: str | None, dtype: str) -> dict:
         if weka_root:
             path = f"{weka_root.rstrip('/')}/{did}/metadata.json"
         else:
-            path = f"PLACEHOLDER/{did}/metadata.json"  # mock scorer never opens it
+            path = f"{did}/metadata.json"  # relative; mock scorer never opens it
         registry[did] = path if dtype == "asta" else {"dataset_metadata": path, "dataset_metadata_type": dtype}
     return registry
 
@@ -87,9 +87,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--max-eval", type=int, default=None, help="Cap eval rows (smoke tests).")
     ap.add_argument(
         "--weka-root",
-        default=None,
-        help="If set, registry paths become <weka-root>/<dataset_id>/metadata.json "
-        "(real reward server). Omit for placeholder paths (mock server).",
+        default="/weka/nora-default/sijial/autodiscovery/datasets",
+        help="Dataset-metadata root the reward server reads: registry paths become "
+        "<weka-root>/<dataset_id>/metadata.json. Default: %(default)s",
     )
     ap.add_argument(
         "--dataset-metadata-type",
