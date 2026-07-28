@@ -17,7 +17,9 @@ slime needs no autodiscovery dependency: it only speaks HTTP to the server
                "prior_mean": ..., "posterior_mean": ..., "error": str | None}
 
 The server is idempotent on ``request_id`` (scoring runs a real, multi-minute
-experiment), so the HTTP retries built into ``post`` never re-execute it.
+experiment), so transient (5xx/network) retries never re-execute it. A 4xx
+(e.g. unknown ``dataset_id``) is permanent: it is not retried, logs a grep-able
+``MISSING_DATASET dataset_id=<id>`` line, and falls back to the failure reward.
 
 Wiring::
 
@@ -34,10 +36,12 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import uuid
 
-from slime.utils.http_utils import post
+import aiohttp
+
 from slime.utils.types import Sample
 
 logger = logging.getLogger(__name__)
@@ -48,11 +52,53 @@ logger = logging.getLogger(__name__)
 FAILURE_REWARD = float(os.environ.get("AUTODISCOVERY_FAILURE_REWARD", "0.0"))
 
 # Scoring runs a real experiment per request; keep retries low and rely on the
-# server-side request_id dedupe rather than hammering it.
+# server-side request_id dedupe rather than hammering it. Only transient
+# (5xx/network) errors are retried; 4xx are permanent and never retried.
 MAX_RETRIES = int(os.environ.get("AUTODISCOVERY_RM_MAX_RETRIES", "3"))
+# Reward calls are minutes long -> no total timeout, but bound each socket read
+# so a hung server can't wedge a rollout forever.
+REWARD_SOCK_READ_TIMEOUT = float(os.environ.get("AUTODISCOVERY_RM_SOCK_TIMEOUT", "1200"))
 
 _THINK_CLOSE = "</think>"
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+_session: aiohttp.ClientSession | None = None
+
+
+def _get_session() -> aiohttp.ClientSession:
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(limit=0, enable_cleanup_closed=True),
+            timeout=aiohttp.ClientTimeout(total=None, sock_read=REWARD_SOCK_READ_TIMEOUT),
+        )
+    return _session
+
+
+class _PermanentRewardError(Exception):
+    """A 4xx from the reward server: retrying cannot help (e.g. unknown dataset_id)."""
+
+
+async def _post_reward(url: str, payload: dict) -> dict:
+    """POST the reward request. Retry 5xx/network up to MAX_RETRIES; never retry 4xx."""
+    session = _get_session()
+    last_exc: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            async with session.post(url, json=payload) as resp:
+                if resp.status < 300:
+                    return await resp.json()
+                body = (await resp.text())[:300]
+                if 400 <= resp.status < 500:
+                    raise _PermanentRewardError(f"HTTP {resp.status}: {body}")
+                last_exc = RuntimeError(f"HTTP {resp.status}: {body}")  # 5xx -> retry
+        except _PermanentRewardError:
+            raise
+        except Exception as e:  # noqa: BLE001 - network/5xx: retry
+            last_exc = e
+        if attempt + 1 < MAX_RETRIES:
+            await asyncio.sleep(min(2**attempt, 30) + random.random())
+    raise last_exc if last_exc is not None else RuntimeError("reward request failed")
 
 
 def extract_hypothesis(response: str) -> str:
@@ -119,9 +165,19 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
         "request_id": f"{sample.rollout_id if sample.rollout_id is not None else sample.index}-{uuid.uuid4().hex[:8]}",
     }
     try:
-        result = await post(args.rm_url, payload, max_retries=MAX_RETRIES)
+        result = await _post_reward(args.rm_url, payload)
+    except _PermanentRewardError as e:
+        # 4xx: the server cannot score this dataset_id (most often it is not in
+        # the reward-server registry). Do NOT retry. Log grep-ably so the missing
+        # datasets can be collected (`grep MISSING_DATASET`) and added back to the
+        # registry / S3 later.
+        logger.warning(
+            f"[autodiscovery_rm] MISSING_DATASET dataset_id={dataset_id} "
+            f"(reward server rejected 4xx: {e}); returning failure reward"
+        )
+        return FAILURE_REWARD
     except Exception as e:  # noqa: BLE001 - a reward failure must not crash rollout
-        logger.warning(f"autodiscovery_rm: scoring request failed, using failure reward: {e}")
+        logger.warning(f"autodiscovery_rm: scoring request failed after retries, failure reward: {e}")
         return FAILURE_REWARD
 
     # The server owns reward shaping and its own failed-experiment reward, so
