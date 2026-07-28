@@ -40,6 +40,15 @@ command -v uv >/dev/null 2>&1 || { curl -LsSf https://astral.sh/uv/install.sh | 
 export PATH="$HOME/.local/bin:$PATH"
 AWS="uvx --from awscli aws"
 
+# gantry prepends its own miniconda to PATH, and that python lacks torch. The
+# slime image installs torch into its system python (pip, cp310), so strip conda
+# from PATH to restore python/python3 -> the image's torch-enabled interpreter
+# (used by convert_hf_to_torch_dist.py and train.py). uv (~/.local/bin) is kept.
+export PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -viE conda | paste -sd: -)"
+python3 -c 'import torch' 2>/dev/null \
+    && echo "[entry] torch python: $(command -v python3)" \
+    || echo "[entry] WARN: python3 still lacks torch at $(command -v python3)"
+
 # --- 1. clone asta-autodiscovery (has autodiscovery.slime_reward) ---
 if [ ! -d "$ASTA_DIR/.git" ]; then
     git clone --depth 1 --branch "$ASTA_REF" \
