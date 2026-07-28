@@ -61,6 +61,25 @@ HERE = Path(__file__).resolve().parent
 
 def render_description(metadata: dict, dataset_metadata_type: str = "asta") -> str:
     lines = ["##### DATASET DESCRIPTION #####"]
+
+    # BLADE info.json: a single dataset under "data_desc" (dataset_description +
+    # fields[].column / .properties.description). Mirrors
+    # autodiscovery.dataset.get_blade_description.
+    if dataset_metadata_type == "blade":
+        dd = metadata.get("data_desc", {})
+        if dd.get("dataset_description"):
+            lines.append(dd["dataset_description"])
+        fields = dd.get("fields", [])
+        if fields:
+            lines.append("\n### COLUMNS: ###")
+            for fld in fields:
+                col = fld.get("column", "Unnamed")
+                desc = fld.get("properties", {}).get("description") or "No description available."
+                lines.append(f"\n{col}:")
+                lines.append(f"  {desc}")
+        return "\n".join(lines)
+
+    # asta / dbench: one or more datasets under "datasets"[] with columns.raw.
     if dataset_metadata_type == "asta":
         lines.append(metadata.get("description", ""))
     lines.append("\n### DATASETS: ###\n")
@@ -88,17 +107,13 @@ _PERSONA = (
     "dataset(s) described below."
 )
 
-_INSTRUCTION_VARIANTS = [
-    "Propose exactly ONE novel, falsifiable scientific hypothesis that can be "
-    "sufficiently tested by a statistical experiment using only these dataset(s).",
-    "Generate a single creative, falsifiable hypothesis that a rigorous "
-    "statistical experiment on only these dataset(s) could confirm or refute.",
-    "Come up with one interesting, testable hypothesis about this data. It must "
-    "be falsifiable and answerable with a statistical experiment on only the "
-    "provided dataset(s).",
+# One canonical instruction: each dataset is a single task, so the prompt is
+# deterministic. Within-group diversity for GRPO comes from slime sampling the
+# same prompt n_samples_per_prompt times, not from paraphrasing rows.
+_INSTRUCTION = (
     "State exactly ONE original, falsifiable hypothesis about relationships in "
-    "these dataset(s) that could be verified with a robust statistical test.",
-]
+    "these dataset(s) that could be verified with a robust statistical test."
+)
 
 _GUIDELINES = (
     "Guidelines:\n"

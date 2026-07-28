@@ -119,6 +119,35 @@ python -m autodiscovery.slime_reward \
 Do **not** pass `--label-key` (reward is remote) and do **not** pass `--rm-type`
 (the custom RM path is used instead).
 
+## Expanded training set: DiscoveryBench + BLADE (29 real datasets)
+
+Beyond the illustrative tcga/nls examples above, this dir ships a ready-to-use
+set of **29 real datasets** mined into GCS (14 DiscoveryBench `real` + 15 BLADE;
+see `asta-autodiscovery/scripts/dataset_mining`). Every one is verified complete
+(metadata + all referenced data files present in the bucket).
+
+- `dbench_blade_metadata/<id>/{metadata_0.json,info.json}` — the real metadata,
+  read at prep time to embed each dataset's description/columns into the prompt.
+- `datasets_dbench_blade.json` — prep config (29 entries, `dataset_metadata_type`
+  = `dbench` or `blade`).
+- `registry_dbench_blade.example.json` — the reward-server registry
+  (`${WEKA_ROOT}`-parameterized; 29 `dataset_id -> {dataset_metadata, type}`).
+- `dbench_blade_sample.jsonl` — 6 inspectable prompt rows (dbench + blade).
+
+Generate the expanded prompt data:
+
+```bash
+python prepare_dataset.py --config datasets_dbench_blade.json \
+    --out-dir data_dbench_blade --num-per-dataset 32 --eval-per-dataset 4
+# -> 812 train + 116 eval rows across 29 dataset_ids
+```
+
+Then point the reward server at the expanded registry (after `${WEKA_ROOT}`
+expansion / syncing the GCS data to that root) and slime at
+`data_dbench_blade/{train,eval}.jsonl`, exactly as above. `blade` metadata is a
+single dataset under `data_desc`; `dbench` metadata lists `datasets[]` with
+columns — `prepare_dataset.py` renders both.
+
 ## Assumptions to confirm
 
 - **`WEKA_ROOT`**: `/weka/nora-default/sijial/autodiscovery/datasets` on the
