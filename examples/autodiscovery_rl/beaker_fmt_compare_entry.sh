@@ -3,8 +3,20 @@
 # evaluated on the dbench+blade cold-start task set. Runs INSIDE slimerl/slime.
 #
 #   JOB=1  train on dbench_blade_fmt1 (29 dataset-tasks)         eval on dbench_blade_fmt1
-#   JOB=2  train on data_smoke_cold   (3 tcga/nls cold-start)    eval on dbench_blade_fmt1
-#
+#   JOB=2  train on coldstart3_baseline   (3 tcga/nls cold-start)    eval on dbench_blade_fmt1
+# 
+# Example gantry run command:
+# gantry run --workspace ai2/autodiscovery --cluster ai2/jupiter --budget ai2/asta \
+#   --gpus 8 --no-python --no-conda --docker-image slimerl/slime:latest \
+#   --priority urgent --timeout 0 --task-timeout 6h --yes \
+#   --gh-token-secret SIJIAL_AI2_GH_TOKEN \
+#   --env CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes \
+#   --env-secret WANDB_KEY=SIJIAL_WANDB_API_KEY --env-secret OPENAI_API_KEY=OPENAI_API_KEY \
+#   --env-secret AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID --env-secret AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY \
+#   --env-secret GITHUB_TOKEN=SIJIAL_AI2_GH_TOKEN --env-secret HF_TOKEN=HF_TOKEN \
+#   --env JOB=1 --name autods-fmtcmp-job1-v5 \
+#   -- bash examples/autodiscovery_rl/beaker_fmt_compare_entry.sh
+# 
 # Both post generated hypotheses to the SAME real reward server, whose registry
 # is the UNION of every dataset either job needs to score (31 = 29 dbench+blade
 # + 2 tcga; nls_raw is shared). Same hyperparams/setup across the two jobs; only
@@ -15,7 +27,7 @@
 #   discoverybench/real + blade  -> the 29 dbench_blade datasets
 #   tcga-breast-cancer, tcga-melanoma (clinical+mutations)  -> the 2 tcga datasets
 #   slime_prompt_data/dbench_blade_fmt1_hyps_open.parquet   -> the eval (+ job1 train) set
-#   data_smoke_cold/{train,eval}.jsonl  -> job2 train (committed in this fork)
+#   coldstart3_baseline/{train,eval}.jsonl  -> job2 train (committed in this fork)
 #
 # Required env (gantry --env-secret): OPENAI_API_KEY, AWS_ACCESS_KEY_ID,
 #   AWS_SECRET_ACCESS_KEY, WANDB_KEY, GITHUB_TOKEN, HF_TOKEN.
@@ -141,7 +153,7 @@ source "$IMG_SLIME/scripts/models/${TRAIN_MODEL}.sh"
 if [ "$JOB" = "1" ]; then
     PROMPT_DATA="$DBENCH_BLADE_PARQUET"; WANDB_GROUP="fmtcmp-job1-train-dbench_blade"
 elif [ "$JOB" = "2" ]; then
-    PROMPT_DATA="$SCRIPT_DIR/data_smoke_cold/train.jsonl"; WANDB_GROUP="fmtcmp-job2-train-coldstart3"
+    PROMPT_DATA="$SCRIPT_DIR/coldstart3_baseline/train.jsonl"; WANDB_GROUP="fmtcmp-job2-train-coldstart3"
 else
     echo "JOB must be 1 or 2"; exit 1
 fi

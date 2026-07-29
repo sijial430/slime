@@ -14,8 +14,7 @@
 #   - Prompt data from prepare_lineage_data.py:
 #       DATA_DIR/train.parquet, DATA_DIR/eval.parquet, DATA_DIR/registry.json
 #   - A reachable reward server at RM_URL that routes on the dataset_ids in the
-#     data. Real: `python -m autodiscovery.slime_reward --dataset_registry <reg>`.
-#     GPU-free smoke: scripts/slime/mock_reward_server.py (same flags).
+#     data: `python -m autodiscovery.slime_reward --dataset_registry <reg>`.
 #
 # Env knobs (defaults in []):
 #   MODEL [qwen2.5-0.5B]  HF_CHECKPOINT  REF_LOAD  SAVE

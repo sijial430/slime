@@ -1,6 +1,0 @@
-{"_comment":"Real-metadata config for the co-located real-reward smoke (3 scoreable datasets).",
- "datasets":[
-  {"dataset_id":"tcga-breast-cancer","metadata_path":"reward_metadata/tcga-breast-cancer/metadata.json","dataset_metadata_type":"asta"},
-  {"dataset_id":"tcga-melanoma","metadata_path":"reward_metadata/tcga-melanoma/metadata.json","dataset_metadata_type":"asta"},
-  {"dataset_id":"nls_raw","metadata_path":"reward_metadata/nls_raw/metadata.json","dataset_metadata_type":"dbench"}
- ]}

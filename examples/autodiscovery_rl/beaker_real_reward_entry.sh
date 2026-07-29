@@ -16,7 +16,7 @@
 #   3. start the real reward server (uv run --package asta-autodiscovery
 #      python -m autodiscovery.slime_reward) on localhost:8000,
 #   4. re-point slime at THIS fork, download + convert Qwen2.5-0.5B,
-#   5. run train_grpo.sh on the cold-start prompts (data_smoke_cold), posting
+#   5. run train_grpo.sh on the cold-start prompts (coldstart3_baseline), posting
 #      each sampled hypothesis to the real reward server. NUM_ROLLOUT steps, wandb.
 #
 # Required env (gantry --env-secret): OPENAI_API_KEY, AWS_ACCESS_KEY_ID,
@@ -163,8 +163,8 @@ NUM_ROLLOUT="${NUM_ROLLOUT:-5}" \
     DO_EVAL=0 SAVE_INTERVAL=9999 \
     RM_URL=http://127.0.0.1:8000/reward \
     HF_CHECKPOINT="$MODEL_DIR/" REF_LOAD="$TD_DIR/" \
-    DATA_DIR="$SCRIPT_DIR/data_smoke_cold" \
-    PROMPT_DATA="$SCRIPT_DIR/data_smoke_cold/train.jsonl" \
+    DATA_DIR="$SCRIPT_DIR/coldstart3_baseline" \
+    PROMPT_DATA="$SCRIPT_DIR/coldstart3_baseline/train.jsonl" \
     MEGATRON_PATH="$MEGATRON_PATH" \
     USE_WANDB=1 WANDB_KEY="${WANDB_KEY:-${SIJIAL_WANDB_API_KEY:-}}" \
     WANDB_PROJECT=autodiscovery-rl WANDB_GROUP="real-reward-${TRAIN_MODEL}-${NUM_ROLLOUT}steps" \
