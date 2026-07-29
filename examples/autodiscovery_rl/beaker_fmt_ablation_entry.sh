@@ -106,17 +106,27 @@ source "$IMG_SLIME/scripts/models/${TRAIN_MODEL}.sh"
 [ -d "$TD_DIR" ] || PYTHONPATH="$MEGATRON_PATH:$IMG_SLIME" python "$IMG_SLIME/tools/convert_hf_to_torch_dist.py" \
     "${MODEL_ARGS[@]}" --hf-checkpoint "$MODEL_DIR" --save "$TD_DIR"
 
-# --- 8. GRPO: train on the FORMAT's train split, eval on valid + test ---
-#   Same hyperparameters as fmt-compare; NUM_ROLLOUT=100. train/valid/test surprise
-#   reward is logged to wandb by slime (rollout reward + eval/<name> reward).
-NUM_ROLLOUT="${NUM_ROLLOUT:-100}" \
-    ROLLOUT_BATCH_SIZE="${ROLLOUT_BATCH_SIZE:-8}" \
+# --- 8. GRPO: EPOCHS passes over the train split; checkpoint every epoch ---
+#   steps/epoch = ceil(train_rows / batch); total = EPOCHS * steps_per_epoch.
+#   Eval (valid) + save a checkpoint at each epoch boundary. train/valid surprise
+#   reward is logged to wandb by slime (rollout reward + eval/valid reward).
+EPOCHS="${EPOCHS:-3}"
+BATCH="${ROLLOUT_BATCH_SIZE:-8}"
+TRAIN_ROWS=$(python3 -c "import pyarrow.parquet as pq; print(pq.read_metadata('$PROMPT_DIR/${FORMAT}_train.parquet').num_rows)")
+STEPS_PER_EPOCH=$(( (TRAIN_ROWS + BATCH - 1) / BATCH ))
+TOTAL_STEPS=$(( EPOCHS * STEPS_PER_EPOCH ))
+CKPT_DIR="${BEAKER_RESULT_DIR:-/results}/ckpt/${FORMAT}"; mkdir -p "$CKPT_DIR"
+echo "[entry] train_rows=$TRAIN_ROWS batch=$BATCH steps/epoch=$STEPS_PER_EPOCH epochs=$EPOCHS total_steps=$TOTAL_STEPS -> ckpt $CKPT_DIR"
+
+NUM_ROLLOUT="$TOTAL_STEPS" \
+    ROLLOUT_BATCH_SIZE="$BATCH" \
     N_SAMPLES_PER_PROMPT="${N_SAMPLES_PER_PROMPT:-8}" \
     MAX_RESPONSE_LEN="${MAX_RESPONSE_LEN:-16384}" MAX_PROMPT_LEN="${MAX_PROMPT_LEN:-2048}" \
     MAX_TOKENS_PER_GPU="${MAX_TOKENS_PER_GPU:-18432}" \
     MODEL="$TRAIN_MODEL" NUM_GPUS="${NUM_GPUS:-8}" TENSOR_PARALLEL="${TENSOR_PARALLEL:-4}" \
     ROLLOUT_NUM_GPUS_PER_ENGINE="${ROLLOUT_NUM_GPUS_PER_ENGINE:-4}" \
-    DO_EVAL=1 EVAL_INTERVAL="${EVAL_INTERVAL:-20}" N_SAMPLES_PER_EVAL_PROMPT=1 SAVE_INTERVAL=9999 \
+    DO_EVAL=1 EVAL_INTERVAL="$STEPS_PER_EPOCH" N_SAMPLES_PER_EVAL_PROMPT=1 \
+    SAVE_INTERVAL="$STEPS_PER_EPOCH" SAVE="$CKPT_DIR" \
     RM_URL=http://127.0.0.1:8000/reward \
     HF_CHECKPOINT="$MODEL_DIR/" REF_LOAD="$TD_DIR/" \
     PROMPT_DATA="$PROMPT_DIR/${FORMAT}_train.parquet" \
