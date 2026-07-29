@@ -63,9 +63,9 @@ json.dump(reg, open(f"{root}/registry.json", "w"), indent=2)
 print(f"registry: {len(reg)} datasets -> {root}/registry.json")
 PY
 
-# --- 4. fetch the FORMAT's train/val/test split parquets ---
+# --- 4. fetch the FORMAT's train/val split parquets ---
 PROMPT_DIR="$DATASET_ROOT/prompt_data"; mkdir -p "$PROMPT_DIR"
-for sp in train val test; do
+for sp in train val; do
     $AWS s3 cp "$S3/slime_prompt_data/dbb_split/${FORMAT}_${sp}.parquet" "$PROMPT_DIR/" --only-show-errors
 done
 
@@ -120,7 +120,7 @@ NUM_ROLLOUT="${NUM_ROLLOUT:-100}" \
     RM_URL=http://127.0.0.1:8000/reward \
     HF_CHECKPOINT="$MODEL_DIR/" REF_LOAD="$TD_DIR/" \
     PROMPT_DATA="$PROMPT_DIR/${FORMAT}_train.parquet" \
-    EVAL_PROMPT_DATA="valid $PROMPT_DIR/${FORMAT}_val.parquet test $PROMPT_DIR/${FORMAT}_test.parquet" \
+    EVAL_PROMPT_DATA="valid $PROMPT_DIR/${FORMAT}_val.parquet" \
     MEGATRON_PATH="$MEGATRON_PATH" \
     USE_WANDB=1 WANDB_KEY="${WANDB_KEY:-${SIJIAL_WANDB_API_KEY:-}}" \
     WANDB_PROJECT=autodiscovery-rl WANDB_GROUP="fmt-ablation-${FORMAT}" \
