@@ -112,8 +112,15 @@ CUSTOM_RM_ARGS=(
 
 EVAL_ARGS=()
 if [ "${DO_EVAL:-1}" = "1" ] && [ "${SMOKE:-0}" != "1" ]; then
-    EVAL_ARGS=(
-        --eval-prompt-data autodiscovery "${EVAL_DATA}"
+    # EVAL_PROMPT_DATA, if set, is a raw "<name> <path> [<name> <path> ...]" list
+    # for multiple eval sets (e.g. "valid /p/val.parquet test /p/test.parquet");
+    # otherwise fall back to a single eval set named "autodiscovery" at EVAL_DATA.
+    if [ -n "${EVAL_PROMPT_DATA:-}" ]; then
+        EVAL_ARGS=(--eval-prompt-data ${EVAL_PROMPT_DATA})
+    else
+        EVAL_ARGS=(--eval-prompt-data autodiscovery "${EVAL_DATA}")
+    fi
+    EVAL_ARGS+=(
         --eval-interval "${EVAL_INTERVAL:-20}"
         --n-samples-per-eval-prompt "${N_SAMPLES_PER_EVAL_PROMPT:-1}"
     )
