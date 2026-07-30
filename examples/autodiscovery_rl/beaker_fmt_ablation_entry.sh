@@ -83,11 +83,14 @@ export SAVE_ROLLOUT_DATA="${SAVE_ROLLOUT_DATA:-$REWARD_LOG_DIR/rollout_data_${FO
 # Return the experiment trace so the dump can capture it (INCLUDE_EXEC_LOG=0 to
 # opt out and keep dumps small).
 if [ "${INCLUDE_EXEC_LOG:-1}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_log; else EXEC_LOG_FLAG=--no-include_execution_log; fi
+# Reward signal: REWARD_SIGNAL=norm_surprisal (default) -> reward = |normalized
+# surprisal|; REWARD_SIGNAL=belief_change -> reward = belief_change / width.
+if [ "${REWARD_SIGNAL:-norm_surprisal}" = "belief_change" ]; then RS_FLAG=--no-use_normalized_surprisal; else RS_FLAG=--use_normalized_surprisal; fi
 ( cd "$ASTA_DIR" && uv run --package asta-autodiscovery python -m autodiscovery.slime_reward \
     --dataset_registry "$DATASET_ROOT/registry.json" --host 127.0.0.1 --port 8000 \
     --concurrency "${REWARD_CONCURRENCY:-48}" \
     --execution_model "${EXECUTION_MODEL:-gpt-5-mini}" --belief_model "${BELIEF_MODEL:-gpt-5-mini}" \
-    --n_belief_samples "${N_BELIEF_SAMPLES:-5}" "$EXEC_LOG_FLAG" \
+    --n_belief_samples "${N_BELIEF_SAMPLES:-5}" "$EXEC_LOG_FLAG" "$RS_FLAG" \
     --no-run_data_loading ) > "$REWARD_LOG" 2>&1 &
 RM_PID=$!
 tail -n +1 -F "$REWARD_LOG" 2>/dev/null & TAIL_PID=$!
@@ -144,7 +147,7 @@ NUM_ROLLOUT="$TOTAL_STEPS" \
     EVAL_PROMPT_DATA="valid $PROMPT_DIR/${FORMAT}_val.parquet" \
     MEGATRON_PATH="$MEGATRON_PATH" \
     USE_WANDB=1 WANDB_KEY="${WANDB_KEY:-${SIJIAL_WANDB_API_KEY:-}}" \
-    WANDB_PROJECT=autodiscovery-rl WANDB_GROUP="fmt-ablation-${FORMAT}" \
+    WANDB_PROJECT=autodiscovery-rl WANDB_GROUP="${REWARD_SIGNAL:-norm_surprisal}-${FORMAT}" \
     bash examples/autodiscovery_rl/train_grpo.sh
 
 echo "=== fmt-ablation FORMAT=$FORMAT finished OK ==="

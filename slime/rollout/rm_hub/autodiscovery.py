@@ -244,14 +244,15 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
         sample.metadata["execution_log"] = result["execution_log"]
     sample.metadata["autodiscovery_reward"] = {
         k: result.get(k)
-        for k in ("reward", "success", "surprising", "belief_change", "kl_divergence", "error")
+        for k in ("reward", "success", "surprising", "belief_change", "normalized_surprisal",
+                  "kl_divergence", "error")
     }
 
     _dump_record({
         **base,
         "reward": float(reward),
-        **{k: result.get(k) for k in ("success", "surprising", "belief_change", "kl_divergence",
-                                       "prior_mean", "posterior_mean", "error")},
+        **{k: result.get(k) for k in ("success", "surprising", "belief_change", "normalized_surprisal",
+                                       "kl_divergence", "prior_mean", "posterior_mean", "error")},
         "execution_log": result.get("execution_log"),
     })
     return float(reward)
