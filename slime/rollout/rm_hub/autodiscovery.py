@@ -33,6 +33,7 @@ server can route to the right dataset.
 """
 
 import asyncio
+import fcntl
 import json
 import logging
 import os
@@ -45,6 +46,37 @@ import aiohttp
 from slime.utils.types import Sample
 
 logger = logging.getLogger(__name__)
+
+# Optional per-rollout record dump. When AUTODISCOVERY_RM_DUMP is set, every
+# scored (or failed) sample appends one JSON line with the reward, surprise
+# diagnostics, the execution log (only if the server returns one, i.e. it was
+# started with --include_execution_log), and the identifying keys
+# (rollout_id, dataset_id, data_fmt). Rollout workers are separate processes
+# all appending to the same file, so guard each write with an flock.
+_DUMP_PATH = os.environ.get("AUTODISCOVERY_RM_DUMP") or None
+# execution_log can be enormous (the server's full multi-agent trace). Cap it in
+# the dump so /results doesn't balloon to GBs; 0 disables the cap.
+_DUMP_MAXLOG = int(os.environ.get("AUTODISCOVERY_RM_DUMP_MAXLOG", "100000"))
+
+
+def _dump_record(record: dict) -> None:
+    """Append one JSON line to the dump file (cross-process safe). Never raises."""
+    if not _DUMP_PATH:
+        return
+    try:
+        log = record.get("execution_log")
+        if _DUMP_MAXLOG and isinstance(log, str) and len(log) > _DUMP_MAXLOG:
+            record = {**record, "execution_log": log[:_DUMP_MAXLOG],
+                      "execution_log_truncated_from": len(log)}
+        line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
+        with open(_DUMP_PATH, "a", encoding="utf-8") as fh:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                fh.write(line)
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    except Exception as e:  # noqa: BLE001 - dumping must never break a rollout
+        logger.warning(f"[autodiscovery_rm] dump failed: {e}")
 
 # Reward returned when we can't even reach the server with a valid request
 # (truncated/empty response, missing dataset_id, transport error). Distinct
@@ -140,13 +172,24 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     if isinstance(sample, list):
         return await asyncio.gather(*(autodiscovery_rm(args, s, **kwargs) for s in sample))
 
+    metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
+    dataset_id = metadata.get("dataset_id")
+    # Identifying keys carried on every dump record so the JSONL can be joined
+    # back to the prompt data / training step.
+    rollout_id = sample.rollout_id if sample.rollout_id is not None else None
+    base = {
+        "rollout_id": rollout_id,
+        "index": sample.index,
+        "dataset_id": dataset_id,
+        "data_fmt": metadata.get("format"),
+    }
+
     # A truncated response has no complete hypothesis; don't burn minutes of
     # sandbox time scoring it.
     if sample.status == Sample.Status.TRUNCATED:
+        _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": "truncated_response"})
         return FAILURE_REWARD
 
-    metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
-    dataset_id = metadata.get("dataset_id")
     if not dataset_id:
         raise ValueError(
             "autodiscovery_rm requires sample.metadata['dataset_id']; add a "
@@ -155,14 +198,16 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
 
     hypothesis = extract_hypothesis(sample.response)
     if not hypothesis:
+        _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": "empty_hypothesis"})
         return FAILURE_REWARD
+    base["hypothesis"] = hypothesis
 
     payload = {
         "hypothesis": hypothesis,
         "dataset_id": dataset_id,
         # Stable across the HTTP retries in post() so the server dedupes instead
         # of re-running the experiment.
-        "request_id": f"{sample.rollout_id if sample.rollout_id is not None else sample.index}-{uuid.uuid4().hex[:8]}",
+        "request_id": f"{rollout_id if rollout_id is not None else sample.index}-{uuid.uuid4().hex[:8]}",
     }
     try:
         result = await _post_reward(args.rm_url, payload)
@@ -175,9 +220,11 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
             f"[autodiscovery_rm] MISSING_DATASET dataset_id={dataset_id} "
             f"(reward server rejected 4xx: {e}); returning failure reward"
         )
+        _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": f"missing_dataset: {e}"})
         return FAILURE_REWARD
     except Exception as e:  # noqa: BLE001 - a reward failure must not crash rollout
         logger.warning(f"autodiscovery_rm: scoring request failed after retries, failure reward: {e}")
+        _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": f"request_failed: {e}"})
         return FAILURE_REWARD
 
     # The server owns reward shaping and its own failed-experiment reward, so
@@ -185,6 +232,7 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     reward = result.get("reward")
     if reward is None:
         logger.warning(f"autodiscovery_rm: server returned no reward: {result}")
+        _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": "no_reward_in_response"})
         return FAILURE_REWARD
 
     # Surface the server's experiment trace + surprise diagnostics on the sample
@@ -198,4 +246,90 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
         k: result.get(k)
         for k in ("reward", "success", "surprising", "belief_change", "kl_divergence", "error")
     }
+
+    _dump_record({
+        **base,
+        "reward": float(reward),
+        **{k: result.get(k) for k in ("success", "surprising", "belief_change", "kl_divergence",
+                                       "prior_mean", "posterior_mean", "error")},
+        "execution_log": result.get("execution_log"),
+    })
     return float(reward)
+
+
+def _log_group_stats(samples, rew, mean, std, adv, n) -> None:
+    """Print per-group reward mean/std/min/max + advantage range, once per rollout.
+
+    ``rew``/``mean``/``std``/``adv`` are (num_groups, n) / (num_groups, 1) tensors
+    aligned with contiguous groups of ``n`` samples in ``samples``.
+    """
+    try:
+        num_groups = rew.shape[0]
+        zero_std = int((std.flatten() < 1e-6).sum())
+        step = None
+        for s in samples:
+            if getattr(s, "rollout_id", None) is not None:
+                step = s.rollout_id
+                break
+        logger.info(
+            f"[group_stats] step={step} groups={num_groups} n={n} "
+            f"zero_std_groups={zero_std}/{num_groups} "
+            f"batch_reward_mean={rew.mean().item():.4f} batch_reward_std={rew.std().item():.4f}"
+        )
+        for g in range(num_groups):
+            grp = samples[g * n] if g * n < len(samples) else None
+            ds = (grp.metadata or {}).get("dataset_id") if grp is not None and isinstance(grp.metadata, dict) else None
+            gi = getattr(grp, "group_index", None) if grp is not None else None
+            r = rew[g]
+            logger.info(
+                f"[group_stats]   g={g} group_index={gi} dataset_id={ds} "
+                f"reward_mean={mean[g].item():.4f} reward_std={std[g].item():.4f} "
+                f"reward_min={r.min().item():.4f} reward_max={r.max().item():.4f} "
+                f"adv_min={adv[g].min().item():.4f} adv_max={adv[g].max().item():.4f}"
+            )
+    except Exception as e:  # noqa: BLE001 - logging must never break training
+        logger.warning(f"[group_stats] logging failed: {e}")
+
+
+def post_process_rewards(args, samples):
+    """Custom reward post-process (``--custom-reward-post-process-path``).
+
+    Replicates slime's built-in GRPO group normalization (subtract group mean,
+    optionally divide by group std) so training behaviour is unchanged, and
+    additionally prints per-group reward/advantage statistics every rollout.
+    Wire with::
+
+        --custom-reward-post-process-path slime.rollout.rm_hub.autodiscovery.post_process_rewards
+
+    Returns ``(raw_rewards, processed_rewards)`` in sample order.
+    """
+    import torch
+
+    # Accept both flat list[Sample] and grouped list[list[Sample]].
+    if samples and isinstance(samples[0], list):
+        flat = [s for grp in samples for s in grp]
+    else:
+        flat = samples
+
+    raw_rewards = [s.get_reward_value(args) for s in flat]
+    est = getattr(args, "advantage_estimator", "grpo")
+    do_norm = getattr(args, "rewards_normalization", True)
+    if est not in ("grpo", "gspo", "cispo", "reinforce_plus_plus_baseline") or not do_norm:
+        return raw_rewards, raw_rewards
+
+    n = args.n_samples_per_prompt
+    rew = torch.tensor(raw_rewards, dtype=torch.float)
+    if rew.shape[-1] == n * args.rollout_batch_size:
+        rew = rew.reshape(-1, n)
+    else:  # unequal group sizes (e.g. partial rollout) — best-effort reshape
+        rew = rew.view(-1, rew.shape[-1])
+    mean = rew.mean(dim=-1, keepdim=True)
+    centered = rew - mean
+    std = rew.std(dim=-1, keepdim=True)
+    if est in ("grpo", "gspo", "cispo") and getattr(args, "grpo_std_normalization", True):
+        adv = centered / (std + 1e-6)
+    else:
+        adv = centered
+
+    _log_group_stats(flat, rew, mean, std, adv, rew.shape[-1])
+    return raw_rewards, adv.flatten().tolist()

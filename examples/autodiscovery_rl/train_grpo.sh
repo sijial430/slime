@@ -109,6 +109,18 @@ CUSTOM_RM_ARGS=(
     --custom-rm-path slime.rollout.rm_hub.autodiscovery.autodiscovery_rm
     --rm-url "${RM_URL}"
 )
+# LOG_GROUP_STATS=1 (default) uses our custom reward post-process to print
+# per-group reward mean/std + advantages each rollout. It replicates slime's
+# GRPO group norm exactly, so advantages are unchanged. Set 0 to use the builtin.
+if [ "${LOG_GROUP_STATS:-1}" = "1" ]; then
+    CUSTOM_RM_ARGS+=(--custom-reward-post-process-path slime.rollout.rm_hub.autodiscovery.post_process_rewards)
+fi
+
+# Save every generated sample (prompt, response, reward, metadata=dataset_id/
+# format, group_index, index, rollout_id) per step. SAVE_ROLLOUT_DATA is a path
+# template containing the literal {rollout_id}; empty disables the dump.
+DEBUG_ARGS=()
+[ -n "${SAVE_ROLLOUT_DATA:-}" ] && DEBUG_ARGS+=(--save-debug-rollout-data "${SAVE_ROLLOUT_DATA}")
 
 EVAL_ARGS=()
 if [ "${DO_EVAL:-1}" = "1" ] && [ "${SMOKE:-0}" != "1" ]; then
@@ -134,11 +146,14 @@ GRPO_ARGS=(
     --entropy-coef 0.00
     --eps-clip 0.2
     --eps-clip-high 0.28
-    # Drop GRPO groups whose N samples all got the same reward (zero within-group
-    # variance -> zero advantage -> no signal). Common with the coarse surprise
-    # reward on weak/near-duplicate hypotheses; filtering keeps the batch useful.
-    --grpo-filter-groups-with-same-reward
 )
+# Dynamic sampling: drop GRPO groups whose N samples all got the same reward
+# (zero within-group variance) and resample to refill the batch. DISABLED by
+# default now so every generated group is kept, scored, saved, and its stats
+# printed (no over-sampling). Set GRPO_FILTER_SAME_REWARD=1 to re-enable.
+if [ "${GRPO_FILTER_SAME_REWARD:-0}" = "1" ]; then
+    GRPO_ARGS+=(--grpo-filter-groups-with-same-reward)
+fi
 
 OPTIMIZER_ARGS=(
     # Megatron's `adam` optimizer is AdamW (decoupled weight decay, Apex
@@ -210,8 +225,16 @@ fi
 cd "${SLIME_ROOT}"
 ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-usage-stats
 
+# Forward the autodiscovery RM's tunables + per-rollout dump path into the ray
+# workers, where the custom RM is imported and reads them at module load time
+# (they are otherwise not visible inside the worker's runtime env).
+RT_ENV="\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\""
+for v in AUTODISCOVERY_RM_DUMP AUTODISCOVERY_FAILURE_REWARD AUTODISCOVERY_RM_MAX_RETRIES AUTODISCOVERY_RM_SOCK_TIMEOUT; do
+    val="${!v:-}"; [ -n "$val" ] && RT_ENV="$RT_ENV, \"$v\": \"$val\""
+done
+
 ray job submit --address="http://127.0.0.1:8265" \
-    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\"}}" \
+    --runtime-env-json="{\"env_vars\": {${RT_ENV}}}" \
     -- python3 "${SLIME_ROOT}/train.py" \
     --actor-num-nodes 1 \
     --actor-num-gpus-per-node "${NUM_GPUS}" \
@@ -220,6 +243,7 @@ ray job submit --address="http://127.0.0.1:8265" \
     "${CKPT_ARGS[@]}" \
     "${ROLLOUT_ARGS[@]}" \
     "${CUSTOM_RM_ARGS[@]}" \
+    "${DEBUG_ARGS[@]}" \
     "${EVAL_ARGS[@]}" \
     "${OPTIMIZER_ARGS[@]}" \
     "${GRPO_ARGS[@]}" \

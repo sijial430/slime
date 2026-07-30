@@ -72,11 +72,22 @@ done
 # --- 5. start the REAL reward server (concurrency = REWARD_CONCURRENCY) ---
 REWARD_LOG_DIR="${BEAKER_RESULT_DIR:-/results}"; mkdir -p "$REWARD_LOG_DIR" 2>/dev/null || REWARD_LOG_DIR=/root
 REWARD_LOG="$REWARD_LOG_DIR/reward_server.log"
+# Per-rollout record dump (reward + surprise diagnostics + execution_log +
+# dataset_id/rollout_id/data_fmt). Written by the slime-side custom RM in the
+# ray workers; train_grpo.sh forwards AUTODISCOVERY_RM_DUMP into their env.
+export AUTODISCOVERY_RM_DUMP="${AUTODISCOVERY_RM_DUMP:-$REWARD_LOG_DIR/rollout_records_${FORMAT}.jsonl}"
+# Full per-step sample dump (slime native --save-debug-rollout-data): one .pt per
+# rollout with every generated sample (prompt/response/reward/metadata/group_index
+# /index/rollout_id). {rollout_id} is a literal placeholder slime fills per step.
+export SAVE_ROLLOUT_DATA="${SAVE_ROLLOUT_DATA:-$REWARD_LOG_DIR/rollout_data_${FORMAT}/{rollout_id}.pt}"
+# Return the experiment trace so the dump can capture it (INCLUDE_EXEC_LOG=0 to
+# opt out and keep dumps small).
+if [ "${INCLUDE_EXEC_LOG:-1}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_log; else EXEC_LOG_FLAG=--no-include_execution_log; fi
 ( cd "$ASTA_DIR" && uv run --package asta-autodiscovery python -m autodiscovery.slime_reward \
     --dataset_registry "$DATASET_ROOT/registry.json" --host 127.0.0.1 --port 8000 \
     --concurrency "${REWARD_CONCURRENCY:-48}" \
     --execution_model "${EXECUTION_MODEL:-gpt-5-mini}" --belief_model "${BELIEF_MODEL:-gpt-5-mini}" \
-    --n_belief_samples "${N_BELIEF_SAMPLES:-5}" --no-include_execution_log \
+    --n_belief_samples "${N_BELIEF_SAMPLES:-5}" "$EXEC_LOG_FLAG" \
     --no-run_data_loading ) > "$REWARD_LOG" 2>&1 &
 RM_PID=$!
 tail -n +1 -F "$REWARD_LOG" 2>/dev/null & TAIL_PID=$!
