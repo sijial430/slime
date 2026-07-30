@@ -79,7 +79,13 @@ export AUTODISCOVERY_RM_DUMP="${AUTODISCOVERY_RM_DUMP:-$REWARD_LOG_DIR/rollout_r
 # Full per-step sample dump (slime native --save-debug-rollout-data): one .pt per
 # rollout with every generated sample (prompt/response/reward/metadata/group_index
 # /index/rollout_id). {rollout_id} is a literal placeholder slime fills per step.
-export SAVE_ROLLOUT_DATA="${SAVE_ROLLOUT_DATA:-$REWARD_LOG_DIR/rollout_data_${FORMAT}/{rollout_id}.pt}"
+# NOTE: assign in a plain statement, NOT inside ${VAR:-default}: the literal '}'
+# in {rollout_id} would close the parameter expansion early and mangle the
+# template to '{rollout_id.pt}' (str.format then does attribute access -> crash).
+if [ -z "${SAVE_ROLLOUT_DATA:-}" ]; then
+    SAVE_ROLLOUT_DATA="$REWARD_LOG_DIR/rollout_data_${FORMAT}/{rollout_id}.pt"
+fi
+export SAVE_ROLLOUT_DATA
 # Return the experiment trace so the dump can capture it (INCLUDE_EXEC_LOG=0 to
 # opt out and keep dumps small).
 if [ "${INCLUDE_EXEC_LOG:-1}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_log; else EXEC_LOG_FLAG=--no-include_execution_log; fi
