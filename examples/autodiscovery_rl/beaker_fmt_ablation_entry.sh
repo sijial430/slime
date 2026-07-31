@@ -11,7 +11,8 @@
 #   test   = 4 held-out datasets            -> eval set "test"
 #
 # Same hyperparameters as the fmt-compare run; only NUM_ROLLOUT=100 and the data.
-# Knobs: FORMAT [fmt1_hyps_open], NUM_ROLLOUT [100], REWARD_CONCURRENCY [48],
+# Knobs: FORMAT [fmt1_hyps_open], NUM_ROLLOUT [100], REWARD_CONCURRENCY [128],
+#   N_BELIEF_SAMPLES [3] (normalized-surprisal theoretical max adapts to N automatically),
 #   ROLLOUT_BATCH_SIZE [8], N_SAMPLES_PER_PROMPT [8], ASTA_REF [sijia/generator-dev].
 # Required env-secret: OPENAI_API_KEY, AWS_*, WANDB_KEY, GITHUB_TOKEN, HF_TOKEN.
 set -ex
@@ -94,9 +95,9 @@ if [ "${INCLUDE_EXEC_LOG:-1}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_lo
 if [ "${REWARD_SIGNAL:-norm_surprisal}" = "belief_change" ]; then RS_FLAG=--no-use_normalized_surprisal; else RS_FLAG=--use_normalized_surprisal; fi
 ( cd "$ASTA_DIR" && uv run --package asta-autodiscovery python -m autodiscovery.slime_reward \
     --dataset_registry "$DATASET_ROOT/registry.json" --host 127.0.0.1 --port 8000 \
-    --concurrency "${REWARD_CONCURRENCY:-48}" \
+    --concurrency "${REWARD_CONCURRENCY:-128}" \
     --execution_model "${EXECUTION_MODEL:-gpt-5-mini}" --belief_model "${BELIEF_MODEL:-gpt-5-mini}" \
-    --n_belief_samples "${N_BELIEF_SAMPLES:-5}" "$EXEC_LOG_FLAG" "$RS_FLAG" \
+    --n_belief_samples "${N_BELIEF_SAMPLES:-3}" "$EXEC_LOG_FLAG" "$RS_FLAG" \
     --no-run_data_loading ) > "$REWARD_LOG" 2>&1 &
 RM_PID=$!
 tail -n +1 -F "$REWARD_LOG" 2>/dev/null & TAIL_PID=$!
