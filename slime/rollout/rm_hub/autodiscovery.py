@@ -64,10 +64,11 @@ def _dump_record(record: dict) -> None:
     if not _DUMP_PATH:
         return
     try:
-        log = record.get("execution_log")
-        if _DUMP_MAXLOG and isinstance(log, str) and len(log) > _DUMP_MAXLOG:
-            record = {**record, "execution_log": log[:_DUMP_MAXLOG],
-                      "execution_log_truncated_from": len(log)}
+        # Cap the large free-text fields so /results doesn't balloon to GBs.
+        for key in ("execution_log", "reasoning"):
+            v = record.get(key)
+            if _DUMP_MAXLOG and isinstance(v, str) and len(v) > _DUMP_MAXLOG:
+                record = {**record, key: v[:_DUMP_MAXLOG], f"{key}_truncated_from": len(v)}
         line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
         with open(_DUMP_PATH, "a", encoding="utf-8") as fh:
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
@@ -166,6 +167,21 @@ def extract_hypothesis(response: str) -> str:
     return text
 
 
+def extract_reasoning(response: str) -> str:
+    """Return the model's reasoning trace: everything before the last ``</think>``.
+
+    The hypothesis is the text *after* the last ``</think>`` (see
+    ``extract_hypothesis``); this returns what precedes it, with a leading
+    ``<think>`` stripped. Empty string when the response has no think block.
+    """
+    if _THINK_CLOSE not in response:
+        return ""
+    reasoning = response.rsplit(_THINK_CLOSE, 1)[0].lstrip()
+    if reasoning.startswith("<think>"):
+        reasoning = reasoning[len("<think>"):]
+    return reasoning.strip()
+
+
 async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> float | list[float]:
     # batched_async_rm (--group-rm / fan-out generate) calls the custom RM with
     # the whole list; fan back out so both arities work.
@@ -182,6 +198,9 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
         "index": sample.index,
         "dataset_id": dataset_id,
         "data_fmt": metadata.get("format"),
+        # The model's reasoning trace (tokens before the last </think>), logged
+        # alongside the hypothesis + reward so the two can be inspected together.
+        "reasoning": extract_reasoning(sample.response),
     }
 
     # A truncated response has no complete hypothesis; don't burn minutes of
@@ -247,6 +266,7 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
         for k in ("reward", "success", "surprising", "belief_change", "normalized_surprisal",
                   "kl_divergence", "error")
     }
+    sample.metadata["reasoning"] = base["reasoning"]
 
     _dump_record({
         **base,
