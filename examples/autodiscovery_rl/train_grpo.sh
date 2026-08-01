@@ -138,14 +138,25 @@ if [ "${DO_EVAL:-1}" = "1" ] && [ "${SMOKE:-0}" != "1" ]; then
     )
 fi
 
+# Advantage estimator + PPO clip bounds, env-overridable. CISPO (single-sided
+# IS-weight clip, MiniMax-M1: keeps every token's gradient, no hard lower clip)
+# is canonically wide -> drop the lower clip (--eps-clip 1.0) and widen the upper
+# (--eps-clip-high 4.0). GRPO/GSPO keep the tight 0.2/0.28. Clips default off the
+# estimator unless EPS_CLIP / EPS_CLIP_HIGH are set explicitly.
+ADVANTAGE_ESTIMATOR="${ADVANTAGE_ESTIMATOR:-grpo}"
+if [ "$ADVANTAGE_ESTIMATOR" = "cispo" ]; then
+    EPS_CLIP="${EPS_CLIP:-1.0}"; EPS_CLIP_HIGH="${EPS_CLIP_HIGH:-4.0}"
+else
+    EPS_CLIP="${EPS_CLIP:-0.2}"; EPS_CLIP_HIGH="${EPS_CLIP_HIGH:-0.28}"
+fi
 GRPO_ARGS=(
-    --advantage-estimator grpo
+    --advantage-estimator "$ADVANTAGE_ESTIMATOR"
     --use-kl-loss
     --kl-loss-coef "${KL_COEF:-0.001}"
     --kl-loss-type low_var_kl
     --entropy-coef 0.00
-    --eps-clip 0.2
-    --eps-clip-high 0.28
+    --eps-clip "$EPS_CLIP"
+    --eps-clip-high "$EPS_CLIP_HIGH"
 )
 # Dynamic sampling: drop GRPO groups whose N samples all got the same reward
 # (zero within-group variance) and resample to refill the batch. DISABLED by
