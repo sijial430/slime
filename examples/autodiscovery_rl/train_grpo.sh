@@ -110,9 +110,9 @@ CUSTOM_RM_ARGS=(
     --rm-url "${RM_URL}"
 )
 # LOG_GROUP_STATS=1 (default) uses our custom reward post-process to print
-# per-group reward mean/std + advantages each rollout. It replicates slime's
-# GRPO group norm exactly, so advantages are unchanged. Set 0 to use the builtin.
-if [ "${LOG_GROUP_STATS:-1}" = "1" ]; then
+# per-group reward mean/std + advantages each rollout. Without LENGTH_CONTROL it
+# replicates slime's GRPO group norm exactly. Set 0 to use the builtin.
+if [ "${LOG_GROUP_STATS:-1}" = "1" ] || [ "${LENGTH_CONTROL:-0}" = "1" ]; then
     CUSTOM_RM_ARGS+=(--custom-reward-post-process-path slime.rollout.rm_hub.autodiscovery.post_process_rewards)
 fi
 # LOG_EXPERIMENT_METRICS=1 (default) augments the train-rollout and eval logging
@@ -250,7 +250,7 @@ ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-
 # workers, where the custom RM is imported and reads them at module load time
 # (they are otherwise not visible inside the worker's runtime env).
 RT_ENV="\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\""
-for v in AUTODISCOVERY_RM_DUMP AUTODISCOVERY_FAILURE_REWARD AUTODISCOVERY_RM_MAX_RETRIES AUTODISCOVERY_RM_SOCK_TIMEOUT; do
+for v in AUTODISCOVERY_RM_DUMP AUTODISCOVERY_FAILURE_REWARD AUTODISCOVERY_RM_MAX_RETRIES AUTODISCOVERY_RM_SOCK_TIMEOUT AUTODISCOVERY_LENGTH_TARGET AUTODISCOVERY_LENGTH_DEADBAND AUTODISCOVERY_LENGTH_COEF; do
     val="${!v:-}"; [ -n "$val" ] && RT_ENV="$RT_ENV, \"$v\": \"$val\""
 done
 

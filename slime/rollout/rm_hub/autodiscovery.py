@@ -435,13 +435,31 @@ def post_process_rewards(args, samples):
         flat = samples
 
     raw_rewards = [s.get_reward_value(args) for s in flat]
+    rewards_for_training = raw_rewards
+
+    # Optional response-length controller.  The surprise score remains the raw
+    # reward used for monitoring/evaluation; only the reward used to construct
+    # the policy advantage is shaped.  A dead band avoids teaching the policy
+    # to hit one exact token count while still opposing sustained length drift.
+    target = float(os.environ.get("AUTODISCOVERY_LENGTH_TARGET", "0"))
+    coefficient = float(os.environ.get("AUTODISCOVERY_LENGTH_COEF", "0"))
+    deadband = float(os.environ.get("AUTODISCOVERY_LENGTH_DEADBAND", "0"))
+    if target > 0 and coefficient > 0:
+        lengths = [float(s.response_length) for s in flat]
+        penalties = [coefficient * max(abs(length - target) - deadband, 0.0) / target for length in lengths]
+        rewards_for_training = [reward - penalty for reward, penalty in zip(raw_rewards, penalties, strict=True)]
+        logger.info(
+            f"[length_control] target={target:.0f} deadband={deadband:.0f} coef={coefficient:.4f} "
+            f"response_mean={sum(lengths) / len(lengths):.1f} "
+            f"penalty_mean={sum(penalties) / len(penalties):.6f} penalty_max={max(penalties):.6f}"
+        )
     est = getattr(args, "advantage_estimator", "grpo")
     do_norm = getattr(args, "rewards_normalization", True)
     if est not in ("grpo", "gspo", "cispo", "reinforce_plus_plus_baseline") or not do_norm:
         return raw_rewards, raw_rewards
 
     n = args.n_samples_per_prompt
-    rew = torch.tensor(raw_rewards, dtype=torch.float)
+    rew = torch.tensor(rewards_for_training, dtype=torch.float)
     if rew.shape[-1] == n * args.rollout_batch_size:
         rew = rew.reshape(-1, n)
     else:  # unequal group sizes (e.g. partial rollout) — best-effort reshape
