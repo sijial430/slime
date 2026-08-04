@@ -115,6 +115,16 @@ CUSTOM_RM_ARGS=(
 if [ "${LOG_GROUP_STATS:-1}" = "1" ]; then
     CUSTOM_RM_ARGS+=(--custom-reward-post-process-path slime.rollout.rm_hub.autodiscovery.post_process_rewards)
 fi
+# LOG_EXPERIMENT_METRICS=1 (default) augments the train-rollout and eval logging
+# with the reward server's per-experiment gate metrics: code_timeout_frac,
+# max_rounds_frac, experiment_rounds_mean (fractions over experiments that
+# actually ran). Emitted under rollout/* and eval/<name>/*. Set 0 to disable.
+if [ "${LOG_EXPERIMENT_METRICS:-1}" = "1" ]; then
+    CUSTOM_RM_ARGS+=(
+        --custom-rollout-log-function-path slime.rollout.rm_hub.autodiscovery.rollout_log_with_experiment_metrics
+        --custom-eval-rollout-log-function-path slime.rollout.rm_hub.autodiscovery.eval_log_with_experiment_metrics
+    )
+fi
 
 # Save every generated sample (prompt, response, reward, metadata=dataset_id/
 # format, group_index, index, rollout_id) per step. SAVE_ROLLOUT_DATA is a path

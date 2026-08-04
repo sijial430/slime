@@ -264,7 +264,11 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     sample.metadata["autodiscovery_reward"] = {
         k: result.get(k)
         for k in ("reward", "success", "surprising", "belief_change", "normalized_surprisal",
-                  "kl_divergence", "error")
+                  "kl_divergence", "error",
+                  # Server-side gate flags: did the experiment hit the code-exec
+                  # timeout / GroupChat round cap, and how many rounds it ran.
+                  # Read back by the custom rollout/eval log funcs below.
+                  "code_timeout_hit", "max_rounds_hit", "n_rounds")
     }
     sample.metadata["reasoning"] = base["reasoning"]
 
@@ -272,10 +276,102 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
         **base,
         "reward": float(reward),
         **{k: result.get(k) for k in ("success", "surprising", "belief_change", "normalized_surprisal",
-                                       "kl_divergence", "prior_mean", "posterior_mean", "error")},
+                                       "kl_divergence", "prior_mean", "posterior_mean", "error",
+                                       "code_timeout_hit", "max_rounds_hit", "n_rounds")},
         "execution_log": result.get("execution_log"),
     })
     return float(reward)
+
+
+def _experiment_gate_metrics(samples) -> dict:
+    """Mean code-timeout / max-rounds hit rates (and mean round count) over a
+    batch of scored samples, read from the ``autodiscovery_reward`` metadata the
+    RM stashed. Shared by the rollout and eval custom log functions below; empty
+    dict when no sample carries the flags (e.g. an all-truncated batch)."""
+    flat = [s for grp in samples for s in grp] if samples and isinstance(samples[0], list) else samples
+    to_hits, mr_hits, rounds = [], [], []
+    for s in flat:
+        md = s.metadata if isinstance(getattr(s, "metadata", None), dict) else {}
+        ar = md.get("autodiscovery_reward") or {}
+        if ar.get("code_timeout_hit") is not None:
+            to_hits.append(float(bool(ar["code_timeout_hit"])))
+        if ar.get("max_rounds_hit") is not None:
+            mr_hits.append(float(bool(ar["max_rounds_hit"])))
+        if ar.get("n_rounds") is not None:
+            rounds.append(float(ar["n_rounds"]))
+    out = {}
+    if to_hits:
+        out["code_timeout_frac"] = sum(to_hits) / len(to_hits)
+    if mr_hits:
+        out["max_rounds_frac"] = sum(mr_hits) / len(mr_hits)
+    if rounds:
+        out["experiment_rounds_mean"] = sum(rounds) / len(rounds)
+    return out
+
+
+def rollout_log_with_experiment_metrics(rollout_id, args, samples, rollout_extra_metrics, rollout_time):
+    """``--custom-rollout-log-function-path`` target.
+
+    Replicates slime's default ``_log_rollout_data`` (so all standard ``rollout/``
+    and ``perf/`` metrics are preserved) and adds the experiment gate metrics
+    (``rollout/code_timeout_frac``, ``rollout/max_rounds_frac``,
+    ``rollout/experiment_rounds_mean``). Returns True to take over logging; on any
+    error it returns False so slime falls back to its built-in logging.
+    """
+    try:
+        from slime.ray.rollout import compute_metrics_from_samples, compute_perf_metrics_from_samples
+        from slime.utils import logging_utils
+        from slime.utils.metric_utils import compute_rollout_step, dict_add_prefix
+
+        if getattr(args, "load_debug_rollout_data", None):
+            return True
+        log_dict = {**(rollout_extra_metrics or {})}
+        log_dict |= dict_add_prefix(compute_metrics_from_samples(args, samples), "rollout/")
+        log_dict |= dict_add_prefix(compute_perf_metrics_from_samples(args, samples, rollout_time), "perf/")
+        log_dict |= dict_add_prefix(_experiment_gate_metrics(samples), "rollout/")
+        step = compute_rollout_step(args, rollout_id)
+        log_dict["rollout/step"] = step
+        logging_utils.log(args, log_dict, step_key="rollout/step")
+        return True
+    except Exception as e:  # noqa: BLE001 - never break training over a log line
+        logger.warning(f"[autodiscovery] custom rollout log failed, using default: {e}")
+        return False
+
+
+def eval_log_with_experiment_metrics(rollout_id, args, data, extra_metrics=None):
+    """``--custom-eval-rollout-log-function-path`` target.
+
+    Replicates slime's default ``_log_eval_rollout_data`` and adds the same
+    experiment gate metrics per eval set (``eval/<name>/code_timeout_frac`` etc.).
+    Returns True to take over logging; False on error to fall back to the builtin.
+    """
+    try:
+        from slime.ray.rollout import compute_metrics_from_samples
+        from slime.utils import logging_utils
+        from slime.utils.metric_utils import compute_pass_rate, compute_rollout_step, dict_add_prefix
+
+        log_dict = extra_metrics or {}
+        for key in data.keys():
+            rewards = data[key]["rewards"]
+            log_dict[f"eval/{key}"] = sum(rewards) / len(rewards)
+            if (samples := data[key].get("samples")) is not None:
+                log_dict |= dict_add_prefix(compute_metrics_from_samples(args, samples), f"eval/{key}/")
+                log_dict |= dict_add_prefix(_experiment_gate_metrics(samples), f"eval/{key}/")
+            if "truncated" in data[key]:
+                truncated = data[key]["truncated"]
+                log_dict[f"eval/{key}-truncated_ratio"] = sum(truncated) / len(truncated)
+            if getattr(args, "log_passrate", False):
+                log_dict |= dict_add_prefix(
+                    compute_pass_rate(flat_rewards=rewards, group_size=args.n_samples_per_eval_prompt),
+                    f"eval/{key}-",
+                )
+        step = compute_rollout_step(args, rollout_id)
+        log_dict["eval/step"] = step
+        logging_utils.log(args, log_dict, step_key="eval/step")
+        return True
+    except Exception as e:  # noqa: BLE001 - never break eval over a log line
+        logger.warning(f"[autodiscovery] custom eval log failed, using default: {e}")
+        return False
 
 
 def _log_group_stats(samples, rew, mean, std, adv, n) -> None:
