@@ -331,6 +331,10 @@ def rollout_log_with_experiment_metrics(rollout_id, args, samples, rollout_extra
         log_dict |= dict_add_prefix(_experiment_gate_metrics(samples), "rollout/")
         step = compute_rollout_step(args, rollout_id)
         log_dict["rollout/step"] = step
+        # Echo to stdout like slime's default _log_rollout_data does; without this
+        # the gate metrics reach W&B but are invisible in the job logs (and the
+        # default "perf {id}: ..." line would go missing since we took over).
+        logger.info(f"perf {rollout_id}: {log_dict}")
         logging_utils.log(args, log_dict, step_key="rollout/step")
         return True
     except Exception as e:  # noqa: BLE001 - never break training over a log line
@@ -367,6 +371,8 @@ def eval_log_with_experiment_metrics(rollout_id, args, data, extra_metrics=None)
                 )
         step = compute_rollout_step(args, rollout_id)
         log_dict["eval/step"] = step
+        # Echo to stdout like slime's default _log_eval_rollout_data does.
+        logger.info(f"eval {rollout_id}: {log_dict}")
         logging_utils.log(args, log_dict, step_key="eval/step")
         return True
     except Exception as e:  # noqa: BLE001 - never break eval over a log line
