@@ -134,6 +134,185 @@ async def _post_reward(url: str, payload: dict) -> dict:
     raise last_exc if last_exc is not None else RuntimeError("reward request failed")
 
 
+# --- Rollout feedback: fold prior-rollout learnings into the next generation ---
+# When AUTODISCOVERY_FEEDBACK_STATE is set (a JSONL path on shared disk), every
+# scored sample appends {dataset_id, hypothesis, reward, learnings}, where
+# "learnings" is an LLM summary of the experiment's Analysis section (fallback:
+# truncated raw text). The paired --custom-generate-function-path target
+# `generate_with_feedback` then injects the best entries from the PREVIOUS
+# rollout step into the user prompt before delegating to slime's default
+# generate. Off (both sides no-op) when the env var is unset.
+_FEEDBACK_STATE = os.environ.get("AUTODISCOVERY_FEEDBACK_STATE") or None
+_FEEDBACK_K = int(os.environ.get("AUTODISCOVERY_FEEDBACK_K", "1"))
+_FEEDBACK_SUMMARY_MODEL = os.environ.get("AUTODISCOVERY_FEEDBACK_SUMMARY_MODEL", "gpt-5-mini")
+# Fallback truncation length for learnings when no API key / summary failure.
+_FEEDBACK_MAXCHARS = int(os.environ.get("AUTODISCOVERY_FEEDBACK_MAXCHARS", "1000"))
+
+_SUMMARIZE_SYS = (
+    "You compress data-analysis reports into task-specific learnings for the next "
+    "experiment on the SAME dataset. From the report, extract at most 3 short "
+    "bullet points covering: data quirks that must be handled (columns, types, "
+    "cleaning steps), what analysis choice worked or failed, and the substantive "
+    "verdict (supported / refuted / inconclusive, with the key number if any). "
+    "Under 100 words total. Output only the bullets."
+)
+
+
+def _extract_analysis(execution_log: str | None) -> str:
+    """The Analysis section of the server's experiment trace ('' if absent)."""
+    if not execution_log or "\nAnalysis:\n" not in execution_log:
+        return ""
+    seg = execution_log.split("\nAnalysis:\n", 1)[1]
+    return seg.split("\nReview:\n", 1)[0].strip()
+
+
+async def _summarize_learnings(analysis: str, error: str | None) -> str:
+    """LLM-compress an analysis into learnings; degrade gracefully to truncation."""
+    if not analysis:
+        return f"(no analysis produced{'; ' + error if error else ''})"
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if api_key:
+        try:
+            session = _get_session()
+            async with session.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": _FEEDBACK_SUMMARY_MODEL,
+                    "messages": [
+                        {"role": "system", "content": _SUMMARIZE_SYS},
+                        {"role": "user", "content": analysis[:12000]},
+                    ],
+                },
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                if resp.status < 300:
+                    data = await resp.json()
+                    text = (data["choices"][0]["message"]["content"] or "").strip()
+                    if text:
+                        return text
+                logger.warning(f"[feedback] summarizer HTTP {resp.status}; falling back to truncation")
+        except Exception as e:  # noqa: BLE001 - feedback must never break a rollout
+            logger.warning(f"[feedback] summarizer failed ({e}); falling back to truncation")
+    return analysis[:_FEEDBACK_MAXCHARS]
+
+
+def _append_feedback(entry: dict) -> None:
+    """Append one JSONL feedback entry (cross-process safe). Never raises."""
+    if not _FEEDBACK_STATE:
+        return
+    try:
+        line = json.dumps(entry, ensure_ascii=False, default=str) + "\n"
+        with open(_FEEDBACK_STATE, "a", encoding="utf-8") as fh:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                fh.write(line)
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[feedback] state append failed: {e}")
+
+
+async def _record_feedback(dataset_id, hypothesis, reward, execution_log=None, error=None) -> None:
+    if not _FEEDBACK_STATE or not dataset_id:
+        return
+    if error in ("truncated_response", "empty_hypothesis"):
+        learnings = "(previous response exceeded the token limit or contained no parseable hypothesis — no experiment was run; keep the response focused and within budget)"
+    else:
+        learnings = await _summarize_learnings(_extract_analysis(execution_log), error)
+    _append_feedback({
+        "dataset_id": dataset_id,
+        "hypothesis": (hypothesis or "")[:600],
+        "reward": None if reward is None else float(reward),
+        "learnings": learnings,
+    })
+
+
+def _recent_feedback(dataset_id: str, group_size: int, k: int) -> list[dict]:
+    """Top-k entries (by reward, then recency) among the last `group_size`
+    feedback lines for this dataset — i.e. the previous rollout step's group."""
+    if not _FEEDBACK_STATE or not os.path.exists(_FEEDBACK_STATE):
+        return []
+    try:
+        entries = []
+        with open(_FEEDBACK_STATE, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if e.get("dataset_id") == dataset_id:
+                    entries.append(e)
+        tail = entries[-group_size:]
+        tail.sort(key=lambda e: (e.get("reward") or 0.0), reverse=True)
+        return tail[:k]
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[feedback] state read failed: {e}")
+        return []
+
+
+_GEN_SUFFIX_MARKER = os.environ.get("AUTODISCOVERY_FEEDBACK_GEN_MARKER", "<|im_start|>assistant")
+
+
+def _format_feedback_block(entries: list[dict]) -> str:
+    lines = ["Feedback from your previous attempt(s) on this task (best first):"]
+    for i, e in enumerate(entries, 1):
+        rew = e.get("reward")
+        lines.append(f"{i}. prior hypothesis: {e.get('hypothesis', '')}")
+        lines.append(f"   prior reward: {'n/a' if rew is None else f'{rew:.3f}'}")
+        lines.append(f"   learnings from its analysis: {e.get('learnings', '')}")
+    lines.append(
+        "Apply these learnings (especially data-handling quirks), and propose a "
+        "hypothesis that is NOT a repeat of the prior ones."
+    )
+    return "\n".join(lines)
+
+
+def _inject_feedback_into_prompt(prompt, block: str):
+    """Insert the feedback block at the end of the final user message.
+
+    Handles both the chat-templated string form (insert before the trailing
+    generation suffix, e.g. Qwen's `<|im_start|>assistant`) and the raw
+    message-list form (append to the last user message)."""
+    if isinstance(prompt, list):
+        for msg in reversed(prompt):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                msg["content"] = f"{msg.get('content', '')}\n\n{block}"
+                return prompt
+        return prompt
+    idx = prompt.rfind(_GEN_SUFFIX_MARKER)
+    if idx < 0:
+        return prompt + "\n\n" + block
+    j = prompt.rfind("<|im_end|>", 0, idx)
+    insert_at = j if j >= 0 else idx
+    return prompt[:insert_at] + "\n\n" + block + prompt[insert_at:]
+
+
+async def generate_with_feedback(args, sample: Sample, sampling_params, evaluation: bool = False) -> Sample:
+    """``--custom-generate-function-path`` target.
+
+    Injects the previous rollout step's best (hypothesis, reward, learnings)
+    into the prompt, then delegates to slime's default generate. Eval prompts
+    are left untouched so eval stays comparable across steps."""
+    from slime.rollout.sglang_rollout import generate  # lazy: avoid import cycle
+
+    try:
+        if not evaluation and _FEEDBACK_STATE:
+            metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
+            dataset_id = metadata.get("dataset_id")
+            if dataset_id:
+                group = int(getattr(args, "n_samples_per_prompt", 1) or 1)
+                entries = _recent_feedback(dataset_id, group, _FEEDBACK_K)
+                if entries:
+                    sample.prompt = _inject_feedback_into_prompt(
+                        sample.prompt, _format_feedback_block(entries)
+                    )
+                    sample.tokens = []  # force re-encoding of the modified prompt
+    except Exception as e:  # noqa: BLE001 - feedback must never break generation
+        logger.warning(f"[feedback] prompt injection failed ({e}); generating without it")
+    return await generate(args, sample, sampling_params)
+
+
 def extract_hypothesis(response: str) -> str:
     """Pull the hypothesis text out of a raw model response.
 
@@ -207,6 +386,7 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     # sandbox time scoring it.
     if sample.status == Sample.Status.TRUNCATED:
         _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": "truncated_response"})
+        await _record_feedback(dataset_id, None, FAILURE_REWARD, error="truncated_response")
         return FAILURE_REWARD
 
     if not dataset_id:
@@ -218,6 +398,7 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     hypothesis = extract_hypothesis(sample.response)
     if not hypothesis:
         _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": "empty_hypothesis"})
+        await _record_feedback(dataset_id, None, FAILURE_REWARD, error="empty_hypothesis")
         return FAILURE_REWARD
     base["hypothesis"] = hypothesis
 
@@ -280,6 +461,10 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
                                        "code_timeout_hit", "max_rounds_hit", "n_rounds")},
         "execution_log": result.get("execution_log"),
     })
+    await _record_feedback(
+        dataset_id, hypothesis, float(reward),
+        execution_log=result.get("execution_log"), error=result.get("error"),
+    )
     return float(reward)
 
 

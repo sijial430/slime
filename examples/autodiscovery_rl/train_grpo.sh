@@ -115,6 +115,17 @@ CUSTOM_RM_ARGS=(
 if [ "${LOG_GROUP_STATS:-1}" = "1" ] || [ "${LENGTH_CONTROL:-0}" = "1" ]; then
     CUSTOM_RM_ARGS+=(--custom-reward-post-process-path slime.rollout.rm_hub.autodiscovery.post_process_rewards)
 fi
+# FEEDBACK_CONTEXT=1 folds the previous rollout step's best (hypothesis, reward,
+# analysis-learnings) into each new training prompt: the RM hub appends every
+# scored sample to AUTODISCOVERY_FEEDBACK_STATE (JSONL), and a custom generate
+# wrapper injects the top entries from the prior step's group into the user
+# message. Learnings are LLM-summarized (AUTODISCOVERY_FEEDBACK_SUMMARY_MODEL,
+# default gpt-5-mini, needs OPENAI_API_KEY in the workers) with truncation
+# fallback. Eval prompts are never modified. Default off.
+if [ "${FEEDBACK_CONTEXT:-0}" = "1" ]; then
+    export AUTODISCOVERY_FEEDBACK_STATE="${AUTODISCOVERY_FEEDBACK_STATE:-${BEAKER_RESULT_DIR:-/results}/rollout_feedback_state.jsonl}"
+    CUSTOM_RM_ARGS+=(--custom-generate-function-path slime.rollout.rm_hub.autodiscovery.generate_with_feedback)
+fi
 # LOG_EXPERIMENT_METRICS=1 (default) augments the train-rollout and eval logging
 # with the reward server's per-experiment gate metrics: code_timeout_frac,
 # max_rounds_frac, experiment_rounds_mean (fractions over experiments that
@@ -250,7 +261,7 @@ ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-
 # workers, where the custom RM is imported and reads them at module load time
 # (they are otherwise not visible inside the worker's runtime env).
 RT_ENV="\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\""
-for v in AUTODISCOVERY_RM_DUMP AUTODISCOVERY_FAILURE_REWARD AUTODISCOVERY_RM_MAX_RETRIES AUTODISCOVERY_RM_SOCK_TIMEOUT AUTODISCOVERY_LENGTH_TARGET AUTODISCOVERY_LENGTH_DEADBAND AUTODISCOVERY_LENGTH_COEF; do
+for v in AUTODISCOVERY_RM_DUMP AUTODISCOVERY_FAILURE_REWARD AUTODISCOVERY_RM_MAX_RETRIES AUTODISCOVERY_RM_SOCK_TIMEOUT AUTODISCOVERY_LENGTH_TARGET AUTODISCOVERY_LENGTH_DEADBAND AUTODISCOVERY_LENGTH_COEF AUTODISCOVERY_FEEDBACK_STATE AUTODISCOVERY_FEEDBACK_K AUTODISCOVERY_FEEDBACK_SUMMARY_MODEL AUTODISCOVERY_FEEDBACK_MAXCHARS AUTODISCOVERY_FEEDBACK_GEN_MARKER OPENAI_API_KEY; do
     val="${!v:-}"; [ -n "$val" ] && RT_ENV="$RT_ENV, \"$v\": \"$val\""
 done
 
