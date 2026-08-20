@@ -109,6 +109,12 @@ if [ "${REWARD_TYPE:-server}" = "codex" ]; then
             && install -m 755 /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex; }
     fi
     codex --version || { echo "codex CLI install failed"; exit 1; }
+    # codex does NOT pick up OPENAI_API_KEY for its own Responses-API calls
+    # (exec fails with 401 "Missing bearer"); it needs an explicit API-key login.
+    printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key \
+        || codex login --api-key "$OPENAI_API_KEY" \
+        || { echo "codex login failed"; exit 1; }
+    codex login status || true
     export AUTODISCOVERY_CODEX_REGISTRY="${AUTODISCOVERY_CODEX_REGISTRY:-$DATASET_ROOT/registry.json}"
 fi
 # The reward server only runs for REWARD_TYPE=server: control rewards never
