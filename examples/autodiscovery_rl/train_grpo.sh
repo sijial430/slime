@@ -104,9 +104,21 @@ ROLLOUT_ARGS=(
     --rollout-temperature 1
 )
 
-# AutoDiscovery surprise reward (remote server; already in the slime package).
+# REWARD_TYPE selects the reward implementation (each is its own rm_hub module):
+#   server (default) - AutoDiscovery reward server over HTTP (real experiments)
+#   zero / one       - constant control rewards (no experiments; zero advantage)
+#   coin             - i.i.d. Bernoulli(AUTODISCOVERY_COIN_P) noise control
+#   codex            - Codex CLI runs plan->execute->analyze locally per sample
+case "${REWARD_TYPE:-server}" in
+    server) RM_PATH=slime.rollout.rm_hub.autodiscovery.autodiscovery_rm ;;
+    zero)   RM_PATH=slime.rollout.rm_hub.zero.reward ;;
+    one)    RM_PATH=slime.rollout.rm_hub.one.reward ;;
+    coin)   RM_PATH=slime.rollout.rm_hub.coin.reward ;;
+    codex)  RM_PATH=slime.rollout.rm_hub.codex.reward ;;
+    *) echo "unknown REWARD_TYPE=${REWARD_TYPE} (server|zero|one|coin|codex)"; exit 1 ;;
+esac
 CUSTOM_RM_ARGS=(
-    --custom-rm-path slime.rollout.rm_hub.autodiscovery.autodiscovery_rm
+    --custom-rm-path "$RM_PATH"
     --rm-url "${RM_URL}"
 )
 # LOG_GROUP_STATS=1 (default) uses our custom reward post-process to print
@@ -261,7 +273,7 @@ ray start --head --node-ip-address 127.0.0.1 --num-gpus "${NUM_GPUS}" --disable-
 # workers, where the custom RM is imported and reads them at module load time
 # (they are otherwise not visible inside the worker's runtime env).
 RT_ENV="\"PYTHONPATH\": \"${MEGATRON_PATH}\", \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\""
-for v in AUTODISCOVERY_RM_DUMP AUTODISCOVERY_FAILURE_REWARD AUTODISCOVERY_RM_MAX_RETRIES AUTODISCOVERY_RM_SOCK_TIMEOUT AUTODISCOVERY_LENGTH_TARGET AUTODISCOVERY_LENGTH_DEADBAND AUTODISCOVERY_LENGTH_COEF AUTODISCOVERY_FEEDBACK_STATE AUTODISCOVERY_FEEDBACK_K AUTODISCOVERY_FEEDBACK_SUMMARY_MODEL AUTODISCOVERY_FEEDBACK_MAXCHARS AUTODISCOVERY_FEEDBACK_GEN_MARKER OPENAI_API_KEY; do
+for v in AUTODISCOVERY_RM_DUMP AUTODISCOVERY_FAILURE_REWARD AUTODISCOVERY_RM_MAX_RETRIES AUTODISCOVERY_RM_SOCK_TIMEOUT AUTODISCOVERY_LENGTH_TARGET AUTODISCOVERY_LENGTH_DEADBAND AUTODISCOVERY_LENGTH_COEF AUTODISCOVERY_FEEDBACK_STATE AUTODISCOVERY_FEEDBACK_K AUTODISCOVERY_FEEDBACK_SUMMARY_MODEL AUTODISCOVERY_FEEDBACK_MAXCHARS AUTODISCOVERY_FEEDBACK_GEN_MARKER AUTODISCOVERY_COIN_P AUTODISCOVERY_CODEX_REGISTRY AUTODISCOVERY_CODEX_MODEL AUTODISCOVERY_CODEX_TIMEOUT AUTODISCOVERY_CODEX_CONCURRENCY AUTODISCOVERY_CODEX_SURPRISAL_WIDTH AUTODISCOVERY_CODEX_WORKROOT OPENAI_API_KEY; do
     val="${!v:-}"; [ -n "$val" ] && RT_ENV="$RT_ENV, \"$v\": \"$val\""
 done
 

@@ -95,6 +95,25 @@ if [ "${INCLUDE_EXEC_LOG:-1}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_lo
 # Reward signal: REWARD_SIGNAL=norm_surprisal (default) -> reward = |normalized
 # surprisal|; REWARD_SIGNAL=belief_change -> reward = belief_change / width.
 if [ "${REWARD_SIGNAL:-norm_surprisal}" = "belief_change" ]; then RS_FLAG=--no-use_normalized_surprisal; else RS_FLAG=--use_normalized_surprisal; fi
+# REWARD_TYPE=codex hands the plan->execute->analyze loop to the Codex CLI
+# inside the rollout workers (see rm_hub/codex.py):
+# install the codex binary and point the workers at the dataset registry.
+# The zero/one/coin control rewards need neither codex nor the reward server.
+if [ "${REWARD_TYPE:-server}" = "codex" ]; then
+    if ! command -v codex >/dev/null 2>&1; then
+        echo "=== installing codex CLI ==="
+        (npm install -g @openai/codex 2>/dev/null) || {
+            curl -LsSf -o /tmp/codex.tar.gz \
+                https://github.com/openai/codex/releases/latest/download/codex-x86_64-unknown-linux-musl.tar.gz \
+            && tar -xzf /tmp/codex.tar.gz -C /tmp \
+            && install -m 755 /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex; }
+    fi
+    codex --version || { echo "codex CLI install failed"; exit 1; }
+    export AUTODISCOVERY_CODEX_REGISTRY="${AUTODISCOVERY_CODEX_REGISTRY:-$DATASET_ROOT/registry.json}"
+fi
+# The reward server only runs for REWARD_TYPE=server: control rewards never
+# score, and the codex reward executes experiments inside the rollout workers.
+if [ "${REWARD_TYPE:-server}" = "server" ]; then
 ( cd "$ASTA_DIR" && uv run --package asta-autodiscovery python -m autodiscovery.slime_reward \
     --dataset_registry "$DATASET_ROOT/registry.json" --host 127.0.0.1 --port 8000 \
     --concurrency "${REWARD_CONCURRENCY:-128}" \
@@ -107,12 +126,15 @@ trap 'kill $RM_PID $TAIL_PID 2>/dev/null || true; echo "===== reward_server.log 
 echo "waiting for reward server..."
 for _ in $(seq 1 180); do curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 && break; sleep 2; done
 curl -s http://127.0.0.1:8000/health | head -c 300; echo
+else
+    echo "[entry] REWARD_TYPE=${REWARD_TYPE}: reward server not started"
+fi
 
 # --- 6. use the image's version-matched slime; inject only the autodiscovery RM ---
 IMG_SLIME="${IMG_SLIME:-/root/slime}"
 [ -f "$IMG_SLIME/train.py" ] || IMG_SLIME="$(cd /root && python3 -c 'import slime,os;print(os.path.dirname(list(slime.__path__)[0]))')"
 [ -f "$IMG_SLIME/train.py" ] || { echo "cannot locate image slime"; exit 1; }
-[ "$IMG_SLIME" != "$REPO_ROOT" ] && cp slime/rollout/rm_hub/autodiscovery.py "$IMG_SLIME/slime/rollout/rm_hub/autodiscovery.py"
+[ "$IMG_SLIME" != "$REPO_ROOT" ] && cp slime/rollout/rm_hub/{autodiscovery,reward_utils,zero,one,coin,codex}.py "$IMG_SLIME/slime/rollout/rm_hub/"
 SGL="$IMG_SLIME/slime/backends/sglang_utils/arguments.py"
 [ -f "$SGL" ] && sed -i -E 's/^([[:space:]]*)args\.(sglang_[a-z0-9_]+) = args\.(sglang_[a-z0-9_]+)$/\1args.\2 = getattr(args, "\3", args.\2)/' "$SGL" || true
 export SLIME_ROOT="$IMG_SLIME"
