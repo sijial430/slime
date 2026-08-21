@@ -108,14 +108,17 @@ ROLLOUT_ARGS=(
 #   server (default) - AutoDiscovery reward server over HTTP (real experiments)
 #   zero / one       - constant control rewards (no experiments; zero advantage)
 #   coin             - i.i.d. Bernoulli(AUTODISCOVERY_COIN_P) noise control
+#   keyword          - 1 iff hypothesis matches AUTODISCOVERY_KEYWORD_PATTERN
+#                      (default "pottery\s*form"; deterministic learnable signal)
 #   codex            - Codex CLI runs plan->execute->analyze locally per sample
 case "${REWARD_TYPE:-server}" in
-    server) RM_PATH=slime.rollout.rm_hub.autodiscovery.autodiscovery_rm ;;
-    zero)   RM_PATH=slime.rollout.rm_hub.zero.reward ;;
-    one)    RM_PATH=slime.rollout.rm_hub.one.reward ;;
-    coin)   RM_PATH=slime.rollout.rm_hub.coin.reward ;;
-    codex)  RM_PATH=slime.rollout.rm_hub.codex.reward ;;
-    *) echo "unknown REWARD_TYPE=${REWARD_TYPE} (server|zero|one|coin|codex)"; exit 1 ;;
+    server)  RM_PATH=slime.rollout.rm_hub.autodiscovery.autodiscovery_rm ;;
+    zero)    RM_PATH=slime.rollout.rm_hub.zero.reward ;;
+    one)     RM_PATH=slime.rollout.rm_hub.one.reward ;;
+    coin)    RM_PATH=slime.rollout.rm_hub.coin.reward ;;
+    keyword) RM_PATH=slime.rollout.rm_hub.keyword.reward ;;
+    codex)   RM_PATH=slime.rollout.rm_hub.codex.reward ;;
+    *) echo "unknown REWARD_TYPE=${REWARD_TYPE} (server|zero|one|coin|keyword|codex)"; exit 1 ;;
 esac
 CUSTOM_RM_ARGS=(
     --custom-rm-path "$RM_PATH"
