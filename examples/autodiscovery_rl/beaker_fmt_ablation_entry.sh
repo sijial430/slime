@@ -140,7 +140,7 @@ fi
 IMG_SLIME="${IMG_SLIME:-/root/slime}"
 [ -f "$IMG_SLIME/train.py" ] || IMG_SLIME="$(cd /root && python3 -c 'import slime,os;print(os.path.dirname(list(slime.__path__)[0]))')"
 [ -f "$IMG_SLIME/train.py" ] || { echo "cannot locate image slime"; exit 1; }
-[ "$IMG_SLIME" != "$REPO_ROOT" ] && cp slime/rollout/rm_hub/{autodiscovery,reward_utils,zero,one,coin,codex}.py "$IMG_SLIME/slime/rollout/rm_hub/"
+[ "$IMG_SLIME" != "$REPO_ROOT" ] && cp slime/rollout/rm_hub/{autodiscovery,reward_utils,zero,one,coin,codex,keyword}.py "$IMG_SLIME/slime/rollout/rm_hub/"
 SGL="$IMG_SLIME/slime/backends/sglang_utils/arguments.py"
 [ -f "$SGL" ] && sed -i -E 's/^([[:space:]]*)args\.(sglang_[a-z0-9_]+) = args\.(sglang_[a-z0-9_]+)$/\1args.\2 = getattr(args, "\3", args.\2)/' "$SGL" || true
 export SLIME_ROOT="$IMG_SLIME"
