@@ -134,16 +134,18 @@ async def _post_reward(url: str, payload: dict) -> dict:
     raise last_exc if last_exc is not None else RuntimeError("reward request failed")
 
 
-# --- Rollout feedback: fold prior-rollout learnings into the next generation ---
-# When AUTODISCOVERY_FEEDBACK_STATE is set (a JSONL path on shared disk), every
-# scored sample appends {dataset_id, hypothesis, reward, learnings}, where
-# "learnings" is an LLM summary of the experiment's Analysis section (fallback:
-# truncated raw text). The paired --custom-generate-function-path target
-# `generate_with_feedback` then injects the best entries from the PREVIOUS
-# rollout step into the user prompt before delegating to slime's default
-# generate. Off (both sides no-op) when the env var is unset.
+# --- Rollout feedback: fold successful rollouts into later generations --------
+# When AUTODISCOVERY_FEEDBACK_STATE is set (a JSONL path on shared disk), a
+# reward-1 sample appends {dataset_id, rollout_id, hypothesis, reward, learnings},
+# where "learnings" is an LLM summary of the experiment's Analysis section
+# (fallback: truncated raw text). Reward-0 samples do not touch the state, so an
+# epoch with no successes leaves the next epoch's context unchanged. The paired
+# --custom-generate-function-path target `generate_with_feedback` injects the
+# accumulated successes into the user prompt before delegating to slime's
+# default generate. Off (both sides no-op) when the env var is unset.
 _FEEDBACK_STATE = os.environ.get("AUTODISCOVERY_FEEDBACK_STATE") or None
-_FEEDBACK_K = int(os.environ.get("AUTODISCOVERY_FEEDBACK_K", "1"))
+# Maximum accumulated successes to inject, newest first. 0 means all successes.
+_FEEDBACK_K = int(os.environ.get("AUTODISCOVERY_FEEDBACK_K", "0"))
 _FEEDBACK_SUMMARY_MODEL = os.environ.get("AUTODISCOVERY_FEEDBACK_SUMMARY_MODEL", "gpt-5-mini")
 # Fallback truncation length for learnings when no API key / summary failure.
 _FEEDBACK_MAXCHARS = int(os.environ.get("AUTODISCOVERY_FEEDBACK_MAXCHARS", "1000"))
@@ -213,24 +215,28 @@ def _append_feedback(entry: dict) -> None:
         logger.warning(f"[feedback] state append failed: {e}")
 
 
-async def _record_feedback(dataset_id, hypothesis, reward, execution_log=None, error=None) -> None:
-    if not _FEEDBACK_STATE or not dataset_id:
+async def _record_feedback(
+    dataset_id, hypothesis, reward, rollout_id=None, execution_log=None, error=None
+) -> None:
+    if not _FEEDBACK_STATE or not dataset_id or not hypothesis or reward != 1.0:
         return
-    if error in ("truncated_response", "empty_hypothesis"):
-        learnings = "(previous response exceeded the token limit or contained no parseable hypothesis — no experiment was run; keep the response focused and within budget)"
-    else:
-        learnings = await _summarize_learnings(_extract_analysis(execution_log), error)
+    learnings = await _summarize_learnings(_extract_analysis(execution_log), error)
     _append_feedback({
         "dataset_id": dataset_id,
+        "rollout_id": rollout_id,
         "hypothesis": (hypothesis or "")[:600],
-        "reward": None if reward is None else float(reward),
+        "reward": float(reward),
         "learnings": learnings,
     })
 
 
-def _recent_feedback(dataset_id: str, group_size: int, k: int) -> list[dict]:
-    """Top-k entries (by reward, then recency) among the last `group_size`
-    feedback lines for this dataset — i.e. the previous rollout step's group."""
+def _successful_feedback(dataset_id: str, k: int) -> list[dict]:
+    """Accumulated reward-1 entries for a task, newest first.
+
+    Since unsuccessful rollouts are never written, an all-zero epoch returns
+    exactly the same context on the following epoch. ``k=0`` returns all prior
+    successes; a positive value bounds the context to the latest ``k``.
+    """
     if not _FEEDBACK_STATE or not os.path.exists(_FEEDBACK_STATE):
         return []
     try:
@@ -241,11 +247,10 @@ def _recent_feedback(dataset_id: str, group_size: int, k: int) -> list[dict]:
                     e = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if e.get("dataset_id") == dataset_id:
+                if e.get("dataset_id") == dataset_id and e.get("reward") == 1.0:
                     entries.append(e)
-        tail = entries[-group_size:]
-        tail.sort(key=lambda e: (e.get("reward") or 0.0), reverse=True)
-        return tail[:k]
+        entries.reverse()
+        return entries[:k] if k > 0 else entries
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[feedback] state read failed: {e}")
         return []
@@ -255,7 +260,7 @@ _GEN_SUFFIX_MARKER = os.environ.get("AUTODISCOVERY_FEEDBACK_GEN_MARKER", "<|im_s
 
 
 def _format_feedback_block(entries: list[dict]) -> str:
-    lines = ["Feedback from your previous attempt(s) on this task (best first):"]
+    lines = ["Successful rollouts from earlier epochs on this task (newest first):"]
     for i, e in enumerate(entries, 1):
         rew = e.get("reward")
         lines.append(f"{i}. prior hypothesis: {e.get('hypothesis', '')}")
@@ -291,9 +296,9 @@ def _inject_feedback_into_prompt(prompt, block: str):
 async def generate_with_feedback(args, sample: Sample, sampling_params, evaluation: bool = False) -> Sample:
     """``--custom-generate-function-path`` target.
 
-    Injects the previous rollout step's best (hypothesis, reward, learnings)
-    into the prompt, then delegates to slime's default generate. Eval prompts
-    are left untouched so eval stays comparable across steps."""
+    Injects accumulated reward-1 (hypothesis, reward, learnings) entries into
+    the prompt, then delegates to slime's default generate. Eval prompts are
+    left untouched so eval stays comparable across steps."""
     from slime.rollout.sglang_rollout import generate  # lazy: avoid import cycle
 
     try:
@@ -301,8 +306,7 @@ async def generate_with_feedback(args, sample: Sample, sampling_params, evaluati
             metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
             dataset_id = metadata.get("dataset_id")
             if dataset_id:
-                group = int(getattr(args, "n_samples_per_prompt", 1) or 1)
-                entries = _recent_feedback(dataset_id, group, _FEEDBACK_K)
+                entries = _successful_feedback(dataset_id, _FEEDBACK_K)
                 if entries:
                     sample.prompt = _inject_feedback_into_prompt(
                         sample.prompt, _format_feedback_block(entries)
@@ -386,7 +390,6 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     # sandbox time scoring it.
     if sample.status == Sample.Status.TRUNCATED:
         _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": "truncated_response"})
-        await _record_feedback(dataset_id, None, FAILURE_REWARD, error="truncated_response")
         return FAILURE_REWARD
 
     if not dataset_id:
@@ -398,7 +401,6 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
     hypothesis = extract_hypothesis(sample.response)
     if not hypothesis:
         _dump_record({**base, "reward": FAILURE_REWARD, "success": False, "error": "empty_hypothesis"})
-        await _record_feedback(dataset_id, None, FAILURE_REWARD, error="empty_hypothesis")
         return FAILURE_REWARD
     base["hypothesis"] = hypothesis
 
@@ -462,7 +464,7 @@ async def autodiscovery_rm(args, sample: Sample | list[Sample], **kwargs) -> flo
         "execution_log": result.get("execution_log"),
     })
     await _record_feedback(
-        dataset_id, hypothesis, float(reward),
+        dataset_id, hypothesis, float(reward), rollout_id=rollout_id,
         execution_log=result.get("execution_log"), error=result.get("error"),
     )
     return float(reward)

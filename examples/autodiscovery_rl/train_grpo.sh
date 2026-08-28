@@ -130,13 +130,13 @@ CUSTOM_RM_ARGS=(
 if [ "${LOG_GROUP_STATS:-1}" = "1" ] || [ "${LENGTH_CONTROL:-0}" = "1" ]; then
     CUSTOM_RM_ARGS+=(--custom-reward-post-process-path slime.rollout.rm_hub.autodiscovery.post_process_rewards)
 fi
-# FEEDBACK_CONTEXT=1 folds the previous rollout step's best (hypothesis, reward,
-# analysis-learnings) into each new training prompt: the RM hub appends every
-# scored sample to AUTODISCOVERY_FEEDBACK_STATE (JSONL), and a custom generate
-# wrapper injects the top entries from the prior step's group into the user
-# message. Learnings are LLM-summarized (AUTODISCOVERY_FEEDBACK_SUMMARY_MODEL,
-# default gpt-5-mini, needs OPENAI_API_KEY in the workers) with truncation
-# fallback. Eval prompts are never modified. Default off.
+# FEEDBACK_CONTEXT=1 accumulates successful rollouts (reward exactly 1) in
+# AUTODISCOVERY_FEEDBACK_STATE (JSONL) and injects their hypotheses + summarized
+# analysis learnings into later training prompts. A step with no reward-1 sample
+# does not change the context. AUTODISCOVERY_FEEDBACK_K limits injected successes
+# to the newest K; default 0 means all. The summary model defaults to gpt-5-mini
+# and uses OPENAI_API_KEY in the workers, with a truncation fallback. Eval prompts
+# are never modified. Default off.
 if [ "${FEEDBACK_CONTEXT:-0}" = "1" ]; then
     export AUTODISCOVERY_FEEDBACK_STATE="${AUTODISCOVERY_FEEDBACK_STATE:-${BEAKER_RESULT_DIR:-/results}/rollout_feedback_state.jsonl}"
     CUSTOM_RM_ARGS+=(--custom-generate-function-path slime.rollout.rm_hub.autodiscovery.generate_with_feedback)

@@ -93,8 +93,14 @@ export SAVE_ROLLOUT_DATA
 # opt out and keep dumps small).
 if [ "${INCLUDE_EXEC_LOG:-1}" = "1" ]; then EXEC_LOG_FLAG=--include_execution_log; else EXEC_LOG_FLAG=--no-include_execution_log; fi
 # Reward signal: REWARD_SIGNAL=norm_surprisal (default) -> reward = |normalized
-# surprisal|; REWARD_SIGNAL=belief_change -> reward = belief_change / width.
-if [ "${REWARD_SIGNAL:-norm_surprisal}" = "belief_change" ]; then RS_FLAG=--no-use_normalized_surprisal; else RS_FLAG=--use_normalized_surprisal; fi
+# surprisal|; belief_change -> reward = belief_change / width; binary -> reward
+# is exactly 1 for a surprising result and 0 otherwise.
+case "${REWARD_SIGNAL:-norm_surprisal}" in
+    norm_surprisal) RS_FLAGS=(--no-use_binary_reward --use_normalized_surprisal) ;;
+    belief_change)  RS_FLAGS=(--no-use_binary_reward --no-use_normalized_surprisal) ;;
+    binary)         RS_FLAGS=(--use_binary_reward --no-use_normalized_surprisal) ;;
+    *) echo "unknown REWARD_SIGNAL=${REWARD_SIGNAL} (norm_surprisal|belief_change|binary)"; exit 1 ;;
+esac
 # REWARD_TYPE=codex hands the plan->execute->analyze loop to the Codex CLI
 # inside the rollout workers (see rm_hub/codex.py):
 # install the codex binary and point the workers at the dataset registry.
@@ -124,7 +130,7 @@ if [ "${REWARD_TYPE:-server}" = "server" ]; then
     --dataset_registry "$DATASET_ROOT/registry.json" --host 127.0.0.1 --port 8000 \
     --concurrency "${REWARD_CONCURRENCY:-128}" \
     --execution_model "${EXECUTION_MODEL:-gpt-5.6-luna}" --belief_model "${BELIEF_MODEL:-gpt-5-mini}" \
-    --n_belief_samples "${N_BELIEF_SAMPLES:-3}" "$EXEC_LOG_FLAG" "$RS_FLAG" \
+    --n_belief_samples "${N_BELIEF_SAMPLES:-3}" "$EXEC_LOG_FLAG" "${RS_FLAGS[@]}" \
     --no-run_data_loading ) > "$REWARD_LOG" 2>&1 &
 RM_PID=$!
 tail -n +1 -F "$REWARD_LOG" 2>/dev/null & TAIL_PID=$!
