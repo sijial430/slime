@@ -263,6 +263,9 @@ if [ "${USE_WANDB:-0}" = "1" ]; then
         --wandb-group "${WANDB_GROUP:-grpo-${MODEL}}"
         --wandb-team "${WANDB_TEAM:-sijial-ai2}"
         --wandb-key "${WANDB_KEY:-${SIJIAL_WANDB_API_KEY:-}}"
+        # Recent W&B releases removed wandb.util.generate_id(), which slime's
+        # optional random-suffix path still calls during startup.
+        --disable-wandb-random-suffix
     )
 fi
 
