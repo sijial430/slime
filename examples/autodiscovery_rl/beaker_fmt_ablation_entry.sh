@@ -191,7 +191,8 @@ NUM_ROLLOUT="$TOTAL_STEPS" \
     EVAL_PROMPT_DATA="valid $PROMPT_DIR/${FORMAT}_val.parquet" \
     MEGATRON_PATH="$MEGATRON_PATH" \
     USE_WANDB=1 WANDB_KEY="${WANDB_KEY:-${SIJIAL_WANDB_API_KEY:-}}" \
-    WANDB_PROJECT=autodiscovery-rl WANDB_GROUP="${REWARD_SIGNAL:-norm_surprisal}-${FORMAT}" \
+    WANDB_PROJECT=autodiscovery-rl \
+    WANDB_GROUP="${WANDB_GROUP:-${REWARD_SIGNAL:-norm_surprisal}-${FORMAT}}" \
     bash examples/autodiscovery_rl/train_grpo.sh
 
 echo "=== fmt-ablation FORMAT=$FORMAT finished OK ==="
